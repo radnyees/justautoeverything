@@ -34,8 +34,17 @@ def launch(project, tasks, seeds, rounds=20, patience=10, effort="high"):
 
 
 def sync(project):
+    """MERGE the remote run records into projects/<project>/runs: files on the volume are copied
+    over local ones, but local-only files (final_scores.json, final/ predictions written by
+    core/final.py) are never deleted."""
+    import shutil
+    import tempfile
     dst = ROOT / "projects" / project
-    subprocess.run(["modal", "volume", "get", "--force", "jae-runs", f"/{project}/runs", str(dst)], check=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["modal", "volume", "get", "--force", "jae-runs", f"/{project}/runs", tmp], check=True)
+        src = Path(tmp) / "runs"
+        if src.exists():
+            shutil.copytree(src, dst / "runs", dirs_exist_ok=True)
     print("synced", project)
 
 

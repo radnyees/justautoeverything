@@ -1,18 +1,18 @@
-"""Multi-atlas ensemble (cc200, cc400, aal, ho; no GSR): per atlas, tangent-space embedding of
-Ledoit-Wolf covariances with per-site Riemannian re-centering (site-wise log-Euclidean reference),
-followed by label-free per-site feature standardization (variance shrunk toward the pooled
-variance) and winsorization of the standardized features (robustness to artifact-driven outlier
-values). Large shared modes of the edges (global connectivity / motion / arousal-like nuisance)
-are estimated label-free as the top principal components over all subjects and the top k of them
-are projected out; k is chosen jointly with an edge-screening fraction (site-balanced class-mean
-difference) by grouped inner CV (within-site AUROC of a mean-difference proxy). Finally an L2
-logistic regression is trained with site-by-class balanced sample weights; standardized decision
-scores are averaged across atlases."""
+"""Multi-atlas ensemble (cc200, cc400, aal, ho; no GSR): per atlas, label-free DVARS-based motion
+scrubbing of high-artifact frames, then tangent-space embedding of Ledoit-Wolf covariances with
+per-site Riemannian re-centering (site-wise log-Euclidean reference), followed by label-free per-site
+feature standardization (variance shrunk toward the pooled variance) and winsorization of the
+standardized features (robustness to artifact-driven outlier values). Large shared modes of the edges
+(global connectivity / motion / arousal-like nuisance) are estimated label-free as the top principal
+components over all subjects and the top k of them are projected out; k is chosen jointly with an
+edge-screening fraction (site-balanced class-mean difference) by repeated, site-stratified grouped
+inner CV (within-site AUROC of a mean-difference proxy), which stabilizes the hyperparameter choice.
+Finally an L2 logistic regression is trained with site-by-class balanced sample weights; standardized
+decision scores are averaged across atlases."""
 import numpy as np
 from sklearn.covariance import LedoitWolf
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import GroupKFold
 from sklearn.preprocessing import StandardScaler
 
 ATLASES = ["cc200", "cc400", "aal", "ho"]
@@ -20,15 +20,54 @@ SHRINK_K = 10.0  # pseudo-count pulling each site's feature variance toward the 
 CLIP = 3.0  # winsorization bound (in within-site SD units) for site-standardized features
 FRACS = [0.05, 0.1, 0.2, 0.4, 1.0]  # candidate fractions of edges kept after screening
 K_OPTS = [0, 1, 2, 4, 8]  # candidate numbers of shared nuisance components removed
-INNER_SPLITS = 3
+INNER_SPLITS = 5
+INNER_REPEATS = 3
+SCRUB_Z = 3.0  # DVARS outlier threshold (robust SD units above the median)
+SCRUB_MAX = 0.2  # never drop more than this fraction of frames
+SCRUB_MIN_T = 40  # do not scrub very short scans
 
 
-def _lw_cov(x):
-    x = np.asarray(x, dtype=np.float64)
+def _standardize_ts(x):
     sd = x.std(axis=0)
     dead = sd < 1e-8
     xs = (x - x.mean(axis=0)) / np.where(dead, 1.0, sd)
     xs[:, dead] = 0.0
+    return xs, dead
+
+
+def _scrub(x):
+    """Label-free removal of motion-like frames: frames adjacent to a large DVARS jump
+    (robust outliers of the RMS frame-to-frame change of standardized ROI signals)."""
+    T = x.shape[0]
+    if T < SCRUB_MIN_T:
+        return x
+    xs, dead = _standardize_ts(x)
+    live = ~dead
+    if live.sum() < 2:
+        return x
+    d = np.sqrt(np.mean(np.diff(xs[:, live], axis=0) ** 2, axis=1))  # length T-1
+    fr = np.zeros(T)
+    fr[1:] = d
+    fr[:-1] = np.maximum(fr[:-1], d)
+    med = np.median(fr)
+    mad = 1.4826 * np.median(np.abs(fr - med))
+    if mad < 1e-12:
+        return x
+    bad = fr > med + SCRUB_Z * mad
+    cap = int(SCRUB_MAX * T)
+    if bad.sum() > cap:
+        bad = np.zeros(T, dtype=bool)
+        if cap > 0:
+            bad[np.argsort(-fr)[:cap]] = True
+    if not bad.any():
+        return x
+    return x[~bad]
+
+
+def _lw_cov(x):
+    x = np.asarray(x, dtype=np.float64)
+    x = _scrub(x)
+    xs, dead = _standardize_ts(x)
     c = LedoitWolf(assume_centered=True).fit(xs).covariance_
     # dead ROIs: decouple and give unit variance so log() stays finite
     c[dead, :] = 0.0
@@ -188,31 +227,59 @@ def _within_site_auc(score, pos, sites):
     return acc / tot if tot else 0.5
 
 
+def _inner_splits(groups, sites):
+    """Repeated grouped K-fold, stratified by site: groups are shuffled within each site and
+    dealt round-robin to folds, so every validation fold contains a share of every site."""
+    ug, inv = np.unique(groups, return_inverse=True)
+    n_splits = min(INNER_SPLITS, len(ug))
+    if n_splits < 2:
+        return []
+    g_site = np.empty(len(ug), dtype=object)
+    g_site[inv] = sites
+    _, site_code = np.unique(g_site.astype(str), return_inverse=True)
+    out = []
+    for r in range(INNER_REPEATS):
+        rng = np.random.RandomState(1000 + r)
+        order = np.lexsort((rng.rand(len(ug)), site_code))
+        offset = rng.randint(n_splits)
+        gfold = np.empty(len(ug), dtype=int)
+        gfold[order] = (np.arange(len(ug)) + offset) % n_splits
+        f = gfold[inv]
+        for j in range(n_splits):
+            tr, va = np.where(f != j)[0], np.where(f == j)[0]
+            if len(tr) and len(va):
+                out.append((tr, va))
+    return out
+
+
 def _choose(Xtr, Ttr, V, pos, s_tr, groups):
-    """Grouped inner CV jointly over the number of removed nuisance components and the screening
-    fraction, using a mean-difference projection as a cheap proxy for the heavily regularized
-    logistic regression. Residualized features X - T_k V_k^T are never materialized."""
+    """Repeated, site-stratified grouped inner CV jointly over the number of removed nuisance
+    components and the screening fraction, using a mean-difference projection as a cheap proxy
+    for the heavily regularized logistic regression. Residualized features are never built."""
     k_opts = [k for k in K_OPTS if k <= V.shape[1]]
     combos = [(k, f) for k in k_opts for f in FRACS[::-1]]  # ties -> fewer removed, more kept
-    n_groups = len(np.unique(groups))
-    n_splits = min(INNER_SPLITS, n_groups)
-    if n_splits < 2:
+    splits = _inner_splits(groups, s_tr)
+    if not splits:
         return 0, 1.0
+    p = Xtr.shape[1]
     res = np.zeros(len(combos))
-    for tr, va in GroupKFold(n_splits=n_splits).split(Xtr, pos, groups):
-        w = _site_balanced_weights(pos[tr].astype(int), s_tr[tr])
-        d0 = _mean_diff(Xtr[tr], pos[tr], w)
-        dT = _mean_diff(Ttr[tr], pos[tr], w)
+    for tr, va in splits:
+        w = np.zeros(len(pos))
+        w[tr] = _site_balanced_weights(pos[tr].astype(int), s_tr[tr])
+        d0 = _mean_diff(Xtr, pos, w)
+        dT = _mean_diff(Ttr, pos, w)
         Xv, Tv = Xtr[va], Ttr[va]
         j = 0
         for k in k_opts:
             d = d0 - V[:, :k] @ dT[:k] if k > 0 else d0
             order = np.argsort(-np.abs(d))
             for f in FRACS[::-1]:
-                sel = order[:max(1, int(round(f * len(d))))]
-                s = Xv[:, sel] @ d[sel]
+                sel = order[:max(1, int(round(f * p)))]
+                dm = np.zeros(p)
+                dm[sel] = d[sel]
+                s = Xv @ dm
                 if k > 0:
-                    s = s - Tv[:, :k] @ (V[sel, :k].T @ d[sel])
+                    s = s - Tv[:, :k] @ (V[:, :k].T @ dm)
                 res[j] += _within_site_auc(s, pos[va], s_tr[va])
                 j += 1
     return combos[int(np.argmax(res))]
@@ -232,6 +299,7 @@ def fit_predict(F_train, y_train, F_test, ctx):
     groups = np.arange(n_tr) if groups is None else np.asarray(groups)
     if len(groups) != n_tr:
         groups = np.arange(n_tr)
+    groups = groups.astype(str)
 
     covs = _unpack(np.concatenate([F_train, F_test], axis=0))
     score = np.zeros(len(F_test))
