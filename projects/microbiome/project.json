@@ -1,14 +1,37 @@
 {
   "title": "Gut microbiome (16S) -> colorectal cancer / inflammatory bowel disease",
-  "families": ["rarefaction/depth-normalization", "relative-abundance", "CLR/log-ratio",
-    "taxonomic-aggregation", "prevalence/abundance-filtering", "alpha-diversity",
-    "beta-diversity/ordination", "phylogeny/taxonomy-structure", "known-marker-taxa",
-    "co-occurrence/network", "feature-selection", "linear-model", "tree-ensemble",
-    "gradient-boosting", "neural-net", "ensemble/stacking", "covariate-use", "batch/location-correction"],
+  "families": [
+    "rarefaction/depth-normalization",
+    "relative-abundance",
+    "CLR/log-ratio",
+    "taxonomic-aggregation",
+    "prevalence/abundance-filtering",
+    "alpha-diversity",
+    "beta-diversity/ordination",
+    "phylogeny/taxonomy-structure",
+    "known-marker-taxa",
+    "co-occurrence/network",
+    "feature-selection",
+    "linear-model",
+    "tree-ensemble",
+    "gradient-boosting",
+    "neural-net",
+    "ensemble/stacking",
+    "covariate-use",
+    "batch/location-correction"
+  ],
   "tasks": {
-    "crc_baxter": {"size": "s", "cv_folds": 5, "metric": "AUROC",
-      "note": "Colorectal cancer (120) vs healthy (172) stool samples, Baxter 2016 (MiSeq V4, one sample per subject). Published RF baseline on genus abundances ~0.77 AUROC (Duvallet 2017). The final champion is also applied, unchanged, to four other CRC studies (different OTU sets) -- solutions that work on taxonomy names (not study-specific denovo ids) generalize across studies."},
-    "ibd_gevers": {"size": "s", "cv_folds": 5, "metric": "AUROC",
-      "note": "Crohn's disease (700) vs non-IBD (340) samples, Gevers 2014 RISK pediatric cohort; samples are stool, terminal-ileum or rectal biopsies (ctx meta 'sample_location'); several samples per subject (grouped CV by subject). Published RF baseline ~0.71 (stool) to 0.85 (biopsy). The champion is also applied to three other IBD stool studies."}
+    "crc_baxter": {
+      "size": "s",
+      "cv_folds": 5,
+      "metric": "AUROC",
+      "note": "Colorectal cancer (120) vs healthy (172) stool samples, Baxter 2016 (MiSeq V4, one sample per subject). Published RF baseline on genus abundances ~0.77 AUROC (Duvallet 2017). The final champion is also applied, unchanged, to four other CRC studies (different OTU sets) -- solutions that work on taxonomy names (not study-specific denovo ids) generalize across studies."
+    },
+    "ibd_pooled": {
+      "size": "s",
+      "cv_folds": 5,
+      "metric": "AUROC",
+      "note": "Inflammatory bowel disease (Crohn's or UC) vs controls, stool 16S POOLED over four studies (Gevers 2014 RISK, Alm, Engstrand, Huttenhower; ctx meta 'study'); columns are RDP taxonomy lineages (OTUs merged by lineage across studies). Strong study/batch effects: sequencing depth, region and protocols differ per study, and case/control ratios differ per study. Published single-study RF baselines 0.66-0.84 AUROC (Duvallet 2017)."
+    }
   }
 }
