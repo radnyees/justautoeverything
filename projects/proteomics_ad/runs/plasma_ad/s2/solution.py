@@ -1,18 +1,21 @@
 """log2 + per-sample median centring + a-priori exclusion of immunoglobulin variable-region
 groups (individual clonal repertoire, not disease biology) + batch-consistent detection filter +
 per-batch protein median centring (train-fold stats) + half-minimum imputation + train-fold
-standardisation with +/-3 SD winsorising + prior-weighted (known AD plasma biomarkers get a
-weaker penalty) L2 logistic regression, probability-averaged with a compact L2 logistic
-regression restricted to the a-priori AD biomarker panel (low-variance knowledge anchor).
+rank-based inverse-normal transform (test mapped through the train ECDF; ties -> mid-rank, so
+imputed values sit at the mean normal score of the bottom quantile rather than an arbitrary
+extreme) + prior-weighted (known AD plasma biomarkers get a weaker penalty) L2 logistic
+regression, probability-averaged with a compact L2 logistic regression restricted to the
+a-priori AD biomarker panel (low-variance knowledge anchor).
 The a-priori panel is extended with abundant plasma proteins that have replicated AD/amyloid
 associations in the literature (fibrinogen, cystatin C, B2M, IGFBP2, gelsolin, vitronectin,
 BCHE, SERPINA1, AGT, PON1, LRG1)."""
 import numpy as np
 import pandas as pd
+from scipy.stats import norm, rankdata
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
-CLIP = 3.0     # winsorise standardised features at +/- CLIP SD (train-fold scaler)
+CLIP = 3.0     # safety clip on the standardised normal scores (rarely active after INT)
 MIN_DET = 0.7  # required detection rate within EVERY (sufficiently large) training batch
 PRIOR_W = 2.0  # feature scale for prior-biology proteins (== 1/PRIOR_W^2 L2 penalty)
 PANEL_C = 0.1  # L2 strength of the prior-panel-only model (fixed a priori)
@@ -80,6 +83,22 @@ def _is_ig_variable(col):
     return len(gs) > 0 and all(g.startswith(IG_VAR_PREFIXES) for g in gs)
 
 
+def _rank_int(Xtr, Xte):
+    """Per-column rank-based inverse-normal transform fitted on train; test via train ECDF."""
+    n = Xtr.shape[0]
+    lo, hi = 0.5 / n, 1.0 - 0.5 / n
+    Ztr = np.empty_like(Xtr, dtype=float)
+    Zte = np.empty_like(Xte, dtype=float)
+    for j in range(Xtr.shape[1]):
+        x = Xtr[:, j]
+        Ztr[:, j] = norm.ppf((rankdata(x, method="average") - 0.5) / n)
+        s = np.sort(x)
+        u = 0.5 * (np.searchsorted(s, Xte[:, j], side="left")
+                   + np.searchsorted(s, Xte[:, j], side="right")) / n
+        Zte[:, j] = norm.ppf(np.clip(u, lo, hi))
+    return Ztr, Zte
+
+
 def fit_predict(F_train, y_train, F_test, ctx):
     btr = _batches(ctx.get("meta_train"), len(F_train))
     bte = _batches(ctx.get("meta_test"), len(F_test))
@@ -120,9 +139,12 @@ def fit_predict(F_train, y_train, F_test, ctx):
     fill = Tr.min() - 1.0                                   # half-minimum on the log2 scale
     Xtr = Tr.fillna(fill).values
     Xte = Te.fillna(fill).values
-    sc = StandardScaler().fit(Xtr)
-    Ztr = np.clip(sc.transform(Xtr), -CLIP, CLIP)           # damp single-sample outliers
-    Zte = np.clip(sc.transform(Xte), -CLIP, CLIP)
+
+    # rank-based inverse-normal transform (train ECDF), then unit-variance scaling
+    Rtr, Rte = _rank_int(Xtr, Xte)
+    sc = StandardScaler().fit(Rtr)
+    Ztr = np.clip(sc.transform(Rtr), -CLIP, CLIP)
+    Zte = np.clip(sc.transform(Rte), -CLIP, CLIP)
 
     # prior-biology weighting: larger scale == weaker L2 penalty on these coefficients
     is_prior = np.array([_is_prior(c) for c in keep])

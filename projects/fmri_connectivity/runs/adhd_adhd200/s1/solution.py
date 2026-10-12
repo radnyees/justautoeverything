@@ -1,0 +1,321 @@
+"""Multi-atlas ensemble (CC200 + AAL + HO): tangent-space embedding of Ledoit-Wolf covariances per atlas
+(log-Euclidean reference, label-free), plus a regional time-series block (log SD amplitude / ALFF proxy and
+lag-1/lag-2 autocorrelation as low-frequency-dominance proxies, pooled across atlases), plus a node-strength
+block (per-ROI global connectivity: mean signed and mean absolute Fisher-z correlation, pooled across atlases),
+plus a dynamic-connectivity block (per-ROI sliding-window temporal variability of the connectivity profile and
+SD of windowed node strength, pooled across atlases).
+Per-site feature standardization (label-free, transductive) plus lightly-penalized site one-hot, sex one-hot
+and age covariate columns, L2 logistic regression per block, decision scores averaged across blocks."""
+import numpy as np
+from sklearn.covariance import LedoitWolf
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+
+_ATLASES = ["cc200", "aal", "ho"]
+_MAX_BLOCKS = 8
+_WIN = 30
+_STEP = 3
+
+
+def _spd_fn(C, f):
+    w, V = np.linalg.eigh(C)
+    w = np.maximum(w, 1e-10)
+    return (V * f(w)) @ V.T
+
+
+def _tangent_feats(ts):
+    covs = []
+    for x in ts:
+        x = np.nan_to_num(np.asarray(x, dtype=np.float64))
+        x = x - x.mean(axis=0)
+        sd = x.std(axis=0)
+        good = sd > 1e-8
+        x[:, good] = x[:, good] / sd[good]
+        x[:, ~good] = 0.0
+        c = LedoitWolf(assume_centered=True).fit(x).covariance_
+        # guarantee strictly positive definite (all-zero ROIs)
+        c = c + 1e-3 * np.eye(c.shape[0])
+        covs.append(c)
+    # label-free log-Euclidean mean as tangent-space reference
+    logs = np.mean([_spd_fn(c, np.log) for c in covs], axis=0)
+    ref = _spd_fn(logs, np.exp)
+    isqrt = _spd_fn(ref, lambda w: 1.0 / np.sqrt(w))
+    iu = np.triu_indices(ref.shape[0], k=0)
+    feats = []
+    for c in covs:
+        t = _spd_fn(isqrt @ c @ isqrt, np.log)
+        feats.append(t[iu])
+    return np.asarray(feats, dtype=np.float32)
+
+
+def _impute_median(F):
+    F = np.asarray(F, dtype=np.float64)
+    med = np.nanmedian(F, axis=0)
+    med = np.where(np.isfinite(med), med, 0.0)
+    bad = ~np.isfinite(F)
+    F[bad] = np.take(med, np.where(bad)[1])
+    return F.astype(np.float32)
+
+
+def _ts_feats(ts):
+    """Per-ROI log SD (amplitude, ALFF proxy) and lag-1/lag-2 autocorrelation (spectral slope proxy)."""
+    rows = []
+    for x in ts:
+        x = np.nan_to_num(np.asarray(x, dtype=np.float64))
+        x = x - x.mean(axis=0)
+        sd = x.std(axis=0)
+        good = sd > 1e-8
+        n_roi = x.shape[1]
+        logsd = np.full(n_roi, np.nan)
+        ac1 = np.full(n_roi, np.nan)
+        ac2 = np.full(n_roi, np.nan)
+        if good.any():
+            z = x[:, good] / sd[good]
+            logsd[good] = np.log(sd[good])
+            if z.shape[0] > 3:
+                ac1[good] = np.mean(z[1:] * z[:-1], axis=0)
+                ac2[good] = np.mean(z[2:] * z[:-2], axis=0)
+        rows.append(np.concatenate([logsd, ac1, ac2]))
+    # impute out-of-FOV ROIs with the per-feature median (label-free)
+    return _impute_median(rows)
+
+
+def _strength_feats(ts):
+    """Per-ROI global connectivity: mean signed and mean absolute Fisher-z correlation to all other ROIs."""
+    rows = []
+    for x in ts:
+        x = np.nan_to_num(np.asarray(x, dtype=np.float64))
+        x = x - x.mean(axis=0)
+        sd = x.std(axis=0)
+        good = sd > 1e-8
+        n_roi = x.shape[1]
+        s_signed = np.full(n_roi, np.nan)
+        s_abs = np.full(n_roi, np.nan)
+        ng = int(good.sum())
+        if ng > 2:
+            z = x[:, good] / sd[good]
+            r = (z.T @ z) / z.shape[0]
+            r = np.clip(r, -0.999, 0.999)
+            fz = np.arctanh(r)
+            np.fill_diagonal(fz, 0.0)
+            s_signed[good] = fz.sum(axis=1) / (ng - 1)
+            s_abs[good] = np.abs(fz).sum(axis=1) / (ng - 1)
+        rows.append(np.concatenate([s_signed, s_abs]))
+    return _impute_median(rows)
+
+
+def _dynamic_feats(ts):
+    """Per-ROI sliding-window dynamics: temporal variability of the connectivity profile
+    (1 - mean between-window correlation of the ROI's FC profile) and SD of windowed node strength."""
+    rows = []
+    for x in ts:
+        x = np.nan_to_num(np.asarray(x, dtype=np.float64))
+        n_t, n_roi = x.shape
+        sd = (x - x.mean(axis=0)).std(axis=0)
+        good = sd > 1e-8
+        ng = int(good.sum())
+        tvar = np.full(n_roi, np.nan)
+        sdstr = np.full(n_roi, np.nan)
+        starts = list(range(0, n_t - _WIN + 1, _STEP))
+        if ng > 3 and len(starts) >= 4:
+            xg = x[:, good]
+            prof = []
+            for s in starts:
+                w = xg[s:s + _WIN]
+                w = w - w.mean(axis=0)
+                wsd = w.std(axis=0)
+                wsd[wsd < 1e-8] = 1.0
+                w = w / wsd
+                r = np.clip((w.T @ w) / _WIN, -0.999, 0.999)
+                fz = np.arctanh(r)
+                np.fill_diagonal(fz, 0.0)
+                prof.append(fz)
+            P = np.asarray(prof)  # (W, ng, ng)
+            nw = P.shape[0]
+            strength = P.sum(axis=2) / (ng - 1)  # (W, ng)
+            sdstr[good] = strength.std(axis=0)
+            # correlation of each ROI's profile between windows (diagonal zero entries included, harmless)
+            Pc = P - P.mean(axis=2, keepdims=True)
+            nrm = np.sqrt((Pc ** 2).sum(axis=2, keepdims=True))
+            nrm[nrm < 1e-10] = 1.0
+            Pc = Pc / nrm
+            G = np.einsum("wik,vik->iwv", Pc, Pc)  # (ng, W, W)
+            off = (G.sum(axis=(1, 2)) - np.trace(G, axis1=1, axis2=2)) / (nw * (nw - 1))
+            tvar[good] = 1.0 - off
+        rows.append(np.concatenate([tvar, sdstr]))
+    return _impute_median(rows)
+
+
+def featurize(items, ctx):
+    strategy = "filt_noglobal" if "filt_noglobal" in ctx["strategies"] else ctx["strategies"][0]
+    atlases = [a for a in _ATLASES if a in ctx["atlases"]]
+    if not atlases:
+        atlases = [ctx["atlases"][0]]
+    blocks = []
+    ts_blocks = []
+    st_blocks = []
+    dyn_blocks = []
+    for a in atlases:
+        ts = ctx["load_timeseries"](items, a, strategy)
+        blocks.append(_tangent_feats(ts))
+        ts_blocks.append(_ts_feats(ts))
+        st_blocks.append(_strength_feats(ts))
+        dyn_blocks.append(_dynamic_feats(ts))
+        del ts
+    blocks.append(np.hstack(ts_blocks))
+    blocks.append(np.hstack(st_blocks))
+    blocks.append(np.hstack(dyn_blocks))
+    n = len(items)
+    # header: block sizes (constant per item) so fit_predict can split the blocks
+    header = np.zeros((n, _MAX_BLOCKS), dtype=np.float32)
+    for j, b in enumerate(blocks[:_MAX_BLOCKS]):
+        header[:, j] = b.shape[1]
+    return np.hstack([header] + blocks[:_MAX_BLOCKS]).astype(np.float32)
+
+
+def _meta_col(meta, key, n):
+    if meta is None:
+        return None
+    try:
+        s = meta[key]
+    except Exception:
+        try:
+            s = [m[key] for m in meta]
+        except Exception:
+            return None
+    out = list(s)
+    if len(out) != n:
+        return None
+    return out
+
+
+def _sites(meta, n):
+    s = _meta_col(meta, "site", n)
+    if s is None:
+        return None
+    return np.array([str(v) for v in s], dtype=object)
+
+
+def _sex(meta, n):
+    s = _meta_col(meta, "sex", n)
+    if s is None:
+        return None
+    out = []
+    for v in s:
+        try:
+            if v is None or (isinstance(v, float) and np.isnan(v)):
+                out.append("nan")
+                continue
+        except Exception:
+            pass
+        t = str(v).strip().lower()
+        if t in ("m", "male", "1", "1.0"):
+            t = "m"
+        elif t in ("f", "female", "0", "0.0", "2", "2.0"):
+            t = "f"
+        elif t in ("", "none", "nan", "<na>", "-999", "-999.0"):
+            t = "nan"
+        out.append(t)
+    return np.array(out, dtype=object)
+
+
+def _age(meta, n):
+    s = _meta_col(meta, "age", n)
+    if s is None:
+        return None
+    out = np.empty(n, dtype=np.float64)
+    for i, v in enumerate(s):
+        try:
+            out[i] = float(v)
+        except Exception:
+            out[i] = np.nan
+    out[(out < 0) | (out > 100)] = np.nan
+    return out
+
+
+def _site_standardize(X, sites):
+    X = X.copy()
+    for s in np.unique(sites):
+        m = sites == s
+        mu = X[m].mean(axis=0)
+        sd = X[m].std(axis=0)
+        sd[sd < 1e-8] = 1.0
+        X[m] = (X[m] - mu) / sd
+    return X
+
+
+def _covariates(ctx, n_tr, n_te):
+    m_tr, m_te = ctx.get("meta_train"), ctx.get("meta_test")
+    extra_tr, extra_te = [], []
+    s_tr = _sites(m_tr, n_tr)
+    s_te = _sites(m_te, n_te)
+    if s_tr is not None and s_te is not None:
+        train_sites = np.unique(s_tr)
+        extra_tr.append((s_tr.reshape(-1, 1) == train_sites.reshape(1, -1)).astype(np.float64))
+        extra_te.append((s_te.reshape(-1, 1) == train_sites.reshape(1, -1)).astype(np.float64))
+
+    x_tr = _sex(m_tr, n_tr)
+    x_te = _sex(m_te, n_te)
+    if x_tr is not None and x_te is not None:
+        cats = np.array([c for c in np.unique(x_tr) if c != "nan"], dtype=object)
+        if len(cats) >= 2:
+            # drop one level to avoid collinearity with site one-hots
+            cats = cats[1:]
+            extra_tr.append((x_tr.reshape(-1, 1) == cats.reshape(1, -1)).astype(np.float64))
+            extra_te.append((x_te.reshape(-1, 1) == cats.reshape(1, -1)).astype(np.float64))
+
+    a_tr = _age(m_tr, n_tr)
+    a_te = _age(m_te, n_te)
+    if a_tr is not None and a_te is not None and np.isfinite(a_tr).sum() > 10:
+        med = np.nanmedian(a_tr)
+        a_tr = np.where(np.isfinite(a_tr), a_tr, med)
+        a_te = np.where(np.isfinite(a_te), a_te, med)
+        mu, sd = a_tr.mean(), a_tr.std()
+        sd = sd if sd > 1e-8 else 1.0
+        z_tr = (a_tr - mu) / sd
+        z_te = (a_te - mu) / sd
+        extra_tr.append(np.column_stack([z_tr, z_tr ** 2 - 1.0]))
+        extra_te.append(np.column_stack([z_te, z_te ** 2 - 1.0]))
+    return s_tr, s_te, extra_tr, extra_te
+
+
+def _fit_block(X_tr, X_te, y_train, s_tr, s_te, extra_tr, extra_te):
+    if s_tr is not None and s_te is not None:
+        n_tr = len(X_tr)
+        X_all = np.vstack([X_tr, X_te])
+        s_all = np.concatenate([s_tr, s_te])
+        X_all = _site_standardize(X_all, s_all)
+        X_tr, X_te = X_all[:n_tr], X_all[n_tr:]
+
+    sc = StandardScaler().fit(X_tr)
+    X_tr = np.clip(sc.transform(X_tr), -6.0, 6.0)
+    X_te = np.clip(sc.transform(X_te), -6.0, 6.0)
+
+    scale = 30.0
+    if extra_tr:
+        X_tr = np.hstack([X_tr] + [e * scale for e in extra_tr])
+        X_te = np.hstack([X_te] + [e * scale for e in extra_te])
+
+    clf = LogisticRegression(C=0.001, max_iter=5000)
+    clf.fit(X_tr, y_train)
+    return clf.decision_function(X_te)
+
+
+def fit_predict(F_train, y_train, F_test, ctx):
+    F_tr = np.asarray(F_train, dtype=np.float32)
+    F_te = np.asarray(F_test, dtype=np.float32)
+    y_train = np.asarray(y_train)
+    n_tr, n_te = len(F_tr), len(F_te)
+
+    sizes = [int(round(v)) for v in F_tr[0, :_MAX_BLOCKS] if v > 0]
+    s_tr, s_te, extra_tr, extra_te = _covariates(ctx, n_tr, n_te)
+
+    scores = []
+    start = _MAX_BLOCKS
+    for sz in sizes:
+        X_tr = F_tr[:, start:start + sz].astype(np.float64)
+        X_te = F_te[:, start:start + sz].astype(np.float64)
+        start += sz
+        scores.append(_fit_block(X_tr, X_te, y_train, s_tr, s_te, extra_tr, extra_te))
+    score = np.mean(scores, axis=0)
+    return 1.0 / (1.0 + np.exp(-score))

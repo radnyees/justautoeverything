@@ -63,7 +63,33 @@ def project_cfg(project):
     return json.loads((ROOT / "projects" / project / "project.json").read_text())
 
 
+def _llm_slot():
+    """Hold one of JAE_LLM_SLOTS machine-wide slots while a claude CLI call runs (each CLI
+    process needs ~300 MB; the orchestrator box is small). Returns an open locked file."""
+    import fcntl
+    n = int(os.environ.get("JAE_LLM_SLOTS", "3"))
+    d = Path("/tmp/jae_llm_slots")
+    d.mkdir(exist_ok=True)
+    while True:
+        for i in range(n):
+            f = open(d / f"slot{i}", "w")
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return f
+            except OSError:
+                f.close()
+        time.sleep(5)
+
+
 def ask_llm(prompt, model, timeout, effort=None):
+    slot = _llm_slot()
+    try:
+        return _ask_llm(prompt, model, timeout, effort)
+    finally:
+        slot.close()
+
+
+def _ask_llm(prompt, model, timeout, effort=None):
     cmd = [CLAUDE_BIN, "-p", "--model", model, "--append-system-prompt", SYSTEM,
            "--disallowed-tools", "Bash", "Edit", "Write", "Read", "NotebookEdit",
            "WebFetch", "WebSearch", "Agent"]
