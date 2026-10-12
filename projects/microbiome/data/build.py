@@ -17,7 +17,7 @@ import urllib.request
 import pandas as pd
 
 ZENODO = "https://zenodo.org/api/records/840333/files/{}_results.tar.gz/content"
-STUDIES = ["crc_baxter", "crc_zeller", "crc_zackular", "crc_xiang", "crc_zhao",
+STUDIES = sys.argv[2:] or ["crc_baxter", "crc_zeller", "crc_zackular", "crc_xiang", "crc_zhao",
            "ibd_gevers_2014", "ibd_alm", "ibd_engstrand_maxee", "ibd_huttenhower"]
 
 
@@ -35,7 +35,7 @@ def main(out):
         meta.index = meta.index.astype(str)
         common = counts.index.intersection(meta.index)
         counts, meta = counts.loc[common], meta.loc[common]
-        counts = counts.loc[:, counts.sum(0) > 0]
+        counts = counts.loc[:, counts.sum(axis=0) > 0]
         meta = meta.astype(str)
         counts.to_parquet(f"{out}/{st}.counts.parquet")
         meta.to_parquet(f"{out}/{st}.meta.parquet")
