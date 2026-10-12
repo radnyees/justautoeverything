@@ -1,0 +1,14 @@
+{
+  "title": "Proteomics -> Alzheimer's disease (plasma and CSF mass spectrometry)",
+  "families": ["log-transform", "sample-normalization", "missing-value-imputation", "missingness-as-signal",
+    "batch/site-correction", "protein-filtering", "univariate-selection", "known-AD-biomarkers",
+    "pathway/module-aggregation", "protein-ratios", "dimensionality-reduction", "covariates(age/sex)",
+    "linear-model", "regularized-linear", "tree-ensemble", "gradient-boosting", "SVM/kernel",
+    "neural-net", "ensemble/stacking"],
+  "tasks": {
+    "plasma_ad": {"size": "s", "cv_folds": 5, "metric": "AUROC",
+      "note": "PLASMA, Alzheimer's disease (53) vs cognitively normal controls (36); DIA-NN protein groups from Orbitrap Astral (4,925 protein groups, many missing). Two acquisition batches (ctx meta 'batch'). Published plasma-MS AD/amyloid classifiers reach AUROC ~0.79-0.91. Small n: guard hard against overfitting."},
+    "csf_ad": {"size": "s", "cv_folds": 5, "metric": "AUROC",
+      "note": "CSF, clinical AD (49) vs clinical non-AD (88) from four cohorts (Berlin, Sweden, Magdeburg, Kiel; ctx meta 'site', plus 'age', 'sex'). Spectronaut DIA, ~1,500 protein groups. Bader et al. 2020 reported AUC ~0.9 using tau-defined labels; here the label is the CLINICAL diagnosis."}
+  }
+}

@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+from bundle import bundle  # noqa: E402
 from loop import project_cfg  # noqa: E402
 
 ap = argparse.ArgumentParser()
@@ -30,8 +31,8 @@ sol = Path(a.solution)
 if not sol.exists():
     sol = Path(__file__).parents[1] / "projects" / a.project / a.solution
 t0 = time.time()
-res = modal.Function.from_name("jae", f"evaluate_{size}").remote(
-    a.project, a.task, sol.read_text(), a.mode, a.seed, bool(a.report), a.time_limit)
+res = modal.Function.from_name("jae", f"ev_{size}").remote(
+    a.project, a.task, sol.read_text(), a.mode, a.seed, bool(a.report), a.time_limit, bundle(a.project))
 print(res["log"][-1500:])
 print(f"{a.project}/{a.task} seed={a.seed} mode={a.mode} SCORE={res['score']} ({time.time() - t0:.0f}s)")
 if a.report and res.get("report"):

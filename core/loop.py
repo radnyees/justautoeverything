@@ -34,6 +34,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "core"))
+from bundle import bundle  # noqa: E402
+
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", str(Path.home() / ".local/bin/claude"))
 CODE_RE = re.compile(r"```(?:python)?\s*\n(.*?)```", re.DOTALL)
 EPS = 1e-4
@@ -76,10 +79,10 @@ def ask_llm(prompt, model, timeout, effort=None):
 def evaluate(project, task, size, code, seed, mode="dev", report=False, time_limit=1500):
     """Score a solution on Modal. Returns (score|-inf, log, report_json|None)."""
     import modal
-    fn = modal.Function.from_name("jae", f"evaluate_{size}")
+    fn = modal.Function.from_name("jae", f"ev_{size}")
     for attempt in range(1, INFRA_RETRIES + 1):
         try:
-            res = fn.remote(project, task, code, mode, seed, report, time_limit)
+            res = fn.remote(project, task, code, mode, seed, report, time_limit, bundle(project))
             break
         except Exception as e:
             msg = f"{type(e).__name__}: {e}"
@@ -167,6 +170,9 @@ def main():
         sys.exit(f"[loop] the current solution does not run:\n{log}")
     best_code = solution.read_text()
     (run_dir / "score.txt").write_text(f"{best:.6f}\n")
+    if not (run_dir / "baseline.json").exists():          # the seed's Dev score, recorded once
+        (run_dir / "baseline.json").write_text(json.dumps({"dev": best, "model": args.model,
+                                                            "effort": args.effort}) + "\n")
     print(f"[loop] {args.project}/{args.task} s{args.seed}: baseline Dev = {best:.6f}", flush=True)
 
     history = [json.loads(l) for l in history_path.read_text().splitlines() if l.strip()] \
