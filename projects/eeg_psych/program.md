@@ -9,8 +9,7 @@
   and lengths differ between subjects/datasets (1-15 min). An entry is None if the subject lacks
   that condition. The final champion is also applied to EXTERNAL datasets (other clinics, other
   amplifiers, EC only): robustness to amplitude scale, reference and recording length matters.
-- `ctx["meta"]` / `meta_train` / `meta_test`: `sex` when known. Age is deliberately NOT given;
-  groups are age-matched.
+- No demographics are given (groups are age-matched where needed).
 - Predictions: one float per subject, higher = more likely the disorder. Metric: AUROC.
 
 ## Open questions worth exploring

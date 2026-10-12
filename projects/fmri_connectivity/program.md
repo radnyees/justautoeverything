@@ -10,9 +10,10 @@
   - ADHD-200 atlases: `aal`, `cc200`, `cc400`, `ez`, `ho`, `tt`; strategy: `athena`.
   - `ctx["atlases"]`, `ctx["strategies"]` list what is available. A few subjects can have
     all-zero ROIs (outside the field of view) -- handle them.
-- `ctx["meta"]` / `meta_train` / `meta_test`: `site`, `age`, `sex`, and (ABIDE) `mean_fd` head motion.
-  Site differences are large; motion is a known confound.
-- Predictions: one float per subject, higher = more likely autism / ADHD. Metric: AUROC.
+- `ctx["meta"]` / `meta_train` / `meta_test`: `site` only (for harmonization). No age, sex or
+  motion estimates are given. Site differences in scanners and protocols are large.
+- Predictions: one float per subject, higher = more likely autism / ADHD. Metric: WITHIN-SITE
+  AUROC (size-weighted mean of per-site AUROCs) -- predicting which site has more cases is useless.
 
 ## Open questions worth exploring
 Which parcellation and resolution; connectivity measure (Pearson, partial correlation /
@@ -20,6 +21,6 @@ precision, Ledoit-Wolf shrinkage, tangent-space embedding of covariance matrices
 mutual information, dynamic/sliding-window connectivity); global signal regression or not;
 graph-theory features (degree, clustering, efficiency, modularity, hubness); network-level
 summaries (default mode, salience, attention, cerebellar); site harmonization (ComBat-style,
-per-site standardization) and motion regression; low-frequency fluctuation (ALFF/fALFF) and
+per-site standardization); low-frequency fluctuation (ALFF/fALFF) and
 regional homogeneity proxies from the time series; ensembles across atlases; classifier choice
 and regularization in the p >> n regime.

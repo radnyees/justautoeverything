@@ -30,8 +30,8 @@
     "ibd_pooled": {
       "size": "s",
       "cv_folds": 5,
-      "metric": "AUROC",
-      "note": "Inflammatory bowel disease (Crohn's or UC) vs controls, stool 16S POOLED over four studies (Gevers 2014 RISK, Alm, Engstrand, Huttenhower; ctx meta 'study'); columns are RDP taxonomy lineages (OTUs merged by lineage across studies). Strong study/batch effects: sequencing depth, region and protocols differ per study, and case/control ratios differ per study. Published single-study RF baselines 0.66-0.84 AUROC (Duvallet 2017)."
+      "metric": "within-study AUROC",
+      "note": "Inflammatory bowel disease (Crohn's or UC) vs controls, stool 16S POOLED over four studies (Gevers 2014 RISK, Alm, Engstrand, Huttenhower; ctx meta 'study'); columns are RDP taxonomy lineages (OTUs merged by lineage across studies). Strong study/batch effects: sequencing depth, region and protocols differ per study, and case/control ratios differ per study. Published single-study RF baselines 0.66-0.84 AUROC (Duvallet 2017). Metric: within-study AUROC (protocol v2)."
     }
   }
 }

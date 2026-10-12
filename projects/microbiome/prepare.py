@@ -21,6 +21,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core"))
+from metrics import within_site_auroc  # noqa: E402
 
 DATA = Path(os.environ.get("JAE_DATA", "/data")) / "microbiome"
 TASKS = json.loads((Path(__file__).parent / "project.json").read_text())["tasks"]
@@ -67,7 +70,7 @@ def load(task):
         study = np.concatenate([[p[3]] * len(p[1]) for p in parts])
         meta = pd.DataFrame({"sample_location": "stool", "study": study}, index=c.index)
         strata = np.array([f"{a}|{b}" for a, b in zip(y, study)])
-        return {"items": c, "y": y, "groups": g, "strata": strata, "meta": meta,
+        return {"items": c, "y": y, "groups": g, "strata": strata, "meta": meta, "sites": study,
                 "ctx": {"study": task, "taxonomy_format":
                         "k__;p__;c__;o__;f__;g__;s__ (RDP lineage; OTUs merged by lineage across studies)"},
                 "external": {}}
@@ -85,5 +88,8 @@ def load(task):
             "external": external}
 
 
-def score(y_true, y_pred, task):
-    return float(roc_auc_score(np.asarray(y_true), np.asarray(y_pred, dtype=float)))
+def score(y_true, y_pred, task, sites=None):
+    """Protocol v2: ibd_pooled is scored WITHIN study (case/control ratios differ by study)."""
+    if sites is None:
+        return float(roc_auc_score(np.asarray(y_true), np.asarray(y_pred, dtype=float)))
+    return within_site_auroc(y_true, y_pred, sites)

@@ -15,9 +15,12 @@ def fit_predict(F_train, y_train, F_test, ctx):
 ```
 
 `ctx` holds task metadata (sampling rate, channel names, atlas names, taxonomy, ...;
-see the project brief) plus `meta_train` / `meta_test` (per-item non-label covariates such as
-site or age, when the project provides them) and `groups_train` (subject ids of the training
-items, for grouped inner CV). The harness runs grouped K-fold CV inside a dev pool and
+see the project brief) plus `meta_train` / `meta_test` (per-item technical covariates such as
+acquisition site, study or batch, when the project provides them) and `groups_train` (subject
+ids of the training items, for grouped inner CV). Demographics (age, sex) are never provided:
+the goal is a biomarker in the measured data, not a demographic shortcut. Site/study/batch may
+be used ONLY to harmonize features (e.g. per-site standardization); multi-site tasks are scored
+WITHIN site, so using site as a predictor cannot help. The harness runs grouped K-fold CV inside a dev pool and
 scores the out-of-fold predictions. A held-out evaluation set (never shown to you) scores the
 final champion once.
 

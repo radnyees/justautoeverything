@@ -6,7 +6,9 @@
   (levels can be empty, e.g. `g__;`). OTU ids (`d__denovoN`) are de novo and study-specific;
   taxonomy names are comparable across studies. Sequencing depth varies a lot between samples.
 - `ctx["meta"]` / `ctx["meta_train"]` / `ctx["meta_test"]`: DataFrame with `sample_location`
-  (stool / Terminal Ileum / Rectum) and `study`.
+  and `study` -- for harmonization only (e.g. per-study normalization). The pooled IBD task is
+  scored WITHIN study (case/control ratios differ by study), so study identity is useless as a
+  predictor; CRC (one study) is scored pooled, plus once on four external CRC studies.
 - Predictions: one float per sample, higher = more likely diseased. Metric: AUROC.
 
 ## Open questions worth exploring

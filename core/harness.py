@@ -126,6 +126,14 @@ def load_solution(path):
     return mod
 
 
+def _score(prepare, y, pred, task, sites):
+    """prepare.score(y, pred, task[, sites]) -- sites only for tasks scored within site."""
+    import inspect
+    if sites is not None and len(inspect.signature(prepare.score).parameters) >= 4:
+        return prepare.score(y, pred, task, sites)
+    return prepare.score(y, pred, task)
+
+
 def run(solution_path):
     project = os.environ["JAE_PROJECT"]
     task = os.environ["JAE_TASK"]
@@ -165,8 +173,10 @@ def run(solution_path):
             pred = sol.fit_predict(take(F, tr), take(y, tr), take(F, te), ctx)
             for j, p in zip(te, list(pred)):
                 oof[j] = p
-        score = prepare.score(y, oof, task)
+        sites = take(ds.get("sites"), dev_idx)
+        score = _score(prepare, y, oof, task, sites)
         report["score"] = score
+        report["sites"] = _jsonable(sites)
         report["predictions"] = _jsonable(oof)
         report["y"] = _jsonable(y)
         report["groups"] = _jsonable(groups)
@@ -178,18 +188,19 @@ def run(solution_path):
                    meta_test=take(ds.get("meta"), eval_idx), groups_train=take(ds["groups"], dev_idx))
         pred = sol.fit_predict(F_dev, take(ds["y"], dev_idx), F_ev, ctx)
         y_ev = take(ds["y"], eval_idx)
-        score = prepare.score(y_ev, list(pred), task)
+        sites = take(ds.get("sites"), eval_idx)
+        score = _score(prepare, y_ev, list(pred), task, sites)
         report.update(score=score, predictions=_jsonable(list(pred)), y=_jsonable(y_ev),
-                      groups=_jsonable(take(ds["groups"], eval_idx)))
+                      groups=_jsonable(take(ds["groups"], eval_idx)), sites=_jsonable(sites))
         ext = {}
         for name, ex in (ds.get("external") or {}).items():   # other datasets, scored once
             Fx = sol.featurize(ex["items"], dict(ctx_base, meta=ex.get("meta"))) \
                 if hasattr(sol, "featurize") else ex["items"]
             px = sol.fit_predict(F_dev, take(ds["y"], dev_idx), Fx,
                                  dict(ctx, meta_test=ex.get("meta")))
-            ext[name] = {"score": prepare.score(ex["y"], list(px), task),
+            ext[name] = {"score": _score(prepare, ex["y"], list(px), task, ex.get("sites")),
                          "predictions": _jsonable(list(px)), "y": _jsonable(ex["y"]),
-                         "groups": _jsonable(ex["groups"])}
+                         "groups": _jsonable(ex["groups"]), "sites": _jsonable(ex.get("sites"))}
             print(f"[harness] external {name}: SCORE {ext[name]['score']:.6f}", flush=True)
         report["external"] = ext
     else:

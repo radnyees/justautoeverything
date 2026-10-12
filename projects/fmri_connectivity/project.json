@@ -1,15 +1,42 @@
 {
   "title": "Resting-state fMRI functional connectivity -> autism / ADHD",
-  "families": ["parcellation-choice", "multi-atlas", "pearson-correlation", "partial-correlation/precision",
-    "shrinkage-covariance", "tangent-space/riemannian", "spectral/coherence", "dynamic-connectivity",
-    "mutual-information/nonlinear", "graph-theory", "network-summaries", "time-series-features(ALFF/variance)",
-    "global-signal-regression", "site-harmonization", "motion/confound-regression", "feature-selection",
-    "dimensionality-reduction", "linear-model", "SVM/kernel", "tree-ensemble", "neural-net", "ensemble/stacking",
-    "covariates(age/sex/site)"],
+  "families": [
+    "parcellation-choice",
+    "multi-atlas",
+    "pearson-correlation",
+    "partial-correlation/precision",
+    "shrinkage-covariance",
+    "tangent-space/riemannian",
+    "spectral/coherence",
+    "dynamic-connectivity",
+    "mutual-information/nonlinear",
+    "graph-theory",
+    "network-summaries",
+    "time-series-features(ALFF/variance)",
+    "global-signal-regression",
+    "site-harmonization",
+    "motion/confound-regression",
+    "feature-selection",
+    "dimensionality-reduction",
+    "linear-model",
+    "SVM/kernel",
+    "tree-ensemble",
+    "neural-net",
+    "ensemble/stacking",
+    "covariates(age/sex/site)"
+  ],
   "tasks": {
-    "autism_abide": {"size": "m", "cv_folds": 5, "metric": "AUROC",
-      "note": "ABIDE I Preprocessed (CPAC), ~1,035 subjects (505 autism / 530 typically developing) from 20 sites. Published subject-independent accuracies ~67-70% (Abraham 2017; Heinsfeld 2018); tangent-space connectivity + linear classifier was the strongest classic pipeline."},
-    "adhd_adhd200": {"size": "m", "cv_folds": 5, "metric": "AUROC",
-      "note": "ADHD-200 Preprocessed (Athena pipeline), ~900 children/adolescents (ADHD of any subtype vs typically developing controls) from 8 sites. The 2011 competition's best imaging-based accuracy was ~61% (3-way); ADHD is harder than autism from rs-fMRI."}
+    "autism_abide": {
+      "size": "m",
+      "cv_folds": 5,
+      "metric": "within-site AUROC",
+      "note": "ABIDE I Preprocessed (CPAC), ~1,035 subjects (505 autism / 530 typically developing) from 20 sites. Published subject-independent accuracies ~67-70% (Abraham 2017; Heinsfeld 2018); tangent-space connectivity + linear classifier was the strongest classic pipeline. Metric: within-site AUROC (protocol v2)."
+    },
+    "adhd_adhd200": {
+      "size": "m",
+      "cv_folds": 5,
+      "metric": "within-site AUROC",
+      "note": "ADHD-200 Preprocessed (Athena pipeline), ~900 children/adolescents (ADHD of any subtype vs typically developing controls) from 8 sites. The 2011 competition's best imaging-based accuracy was ~61% (3-way); ADHD is harder than autism from rs-fMRI. Metric: within-site AUROC (protocol v2)."
+    }
   }
 }

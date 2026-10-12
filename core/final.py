@@ -32,8 +32,12 @@ def load_prepare(project):
     return mod
 
 
-def paired_bootstrap(score, y, p_seed, p_champ, groups, task, n_boot=2000, seed=0):
-    """Resample SUBJECTS with replacement; recompute champion-minus-seed metric each time."""
+def paired_bootstrap(score, y, p_seed, p_champ, groups, task, n_boot=2000, seed=0, sites=None):
+    """Resample SUBJECTS with replacement; recompute champion-minus-seed metric each time
+    (within-site metric when the task provides sites)."""
+    if sites is not None:
+        base_score = score
+        score = lambda yy, pp, t, _s=None: base_score(yy, pp, t, _s)  # noqa: E731
     groups = np.asarray([str(g) for g in groups])
     ug = np.unique(groups)
     idx_by = {g: np.flatnonzero(groups == g) for g in ug}
@@ -43,7 +47,11 @@ def paired_bootstrap(score, y, p_seed, p_champ, groups, task, n_boot=2000, seed=
         idx = np.concatenate([idx_by[g] for g in rng.choice(ug, len(ug), replace=True)])
         yy = [y[i] for i in idx]
         try:
-            d = score(yy, [p_champ[i] for i in idx], task) - score(yy, [p_seed[i] for i in idx], task)
+            if sites is not None:
+                ss = [sites[i] for i in idx]
+                d = score(yy, [p_champ[i] for i in idx], task, ss) - score(yy, [p_seed[i] for i in idx], task, ss)
+            else:
+                d = score(yy, [p_champ[i] for i in idx], task) - score(yy, [p_seed[i] for i in idx], task)
         except ValueError:                      # resample with one class only
             continue
         if np.isfinite(d):
@@ -98,14 +106,16 @@ def main():
         out["eval_gain"] = out["eval_champion"] - out["eval_seed"]
         rs, rc = reps["seed"], reps["champion"]
         out["eval_bootstrap"] = paired_bootstrap(prep.score, rs["y"], rs["predictions"],
-                                                 rc["predictions"], rs["groups"], a.task)
+                                                 rc["predictions"], rs["groups"], a.task,
+                                                 sites=rs.get("sites"))
         out["external"] = {}
         for name, ex_c in (rc.get("external") or {}).items():
             ex_s = rs["external"][name]
             e = {"seed": ex_s["score"], "champion": ex_c["score"],
                  "gain": ex_c["score"] - ex_s["score"]}
             e["bootstrap"] = paired_bootstrap(prep.score, ex_s["y"], ex_s["predictions"],
-                                              ex_c["predictions"], ex_s["groups"], a.task)
+                                              ex_c["predictions"], ex_s["groups"], a.task,
+                                              sites=ex_s.get("sites"))
             out["external"][name] = e
         (run / "final_scores.json").write_text(json.dumps(out, indent=2) + "\n")
         ext = "  ".join(f"{k} {v['seed']:.3f}->{v['champion']:.3f}" for k, v in out["external"].items())

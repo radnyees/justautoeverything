@@ -88,7 +88,7 @@ def load(task):
         p = p[p["has_EC"]]
         items = [f"tdbrain:{s}" for s in p["subject"]]
         y = (p["status"] == case).astype(int).values
-        meta = pd.DataFrame({"sex": p["sex"].values}, index=items)
+        meta = pd.DataFrame(index=items)                   # v2: no demographics
         note = {"age_matched_range": age_range}
         if task == "mdd_tdbrain":
             m = _subjects("mumtaz", ["MDD", "HEALTHY"])
@@ -99,7 +99,7 @@ def load(task):
         p = _subjects("aseeg", ["SZ", "HEALTHY"])
         items = [f"aseeg:{s}" for s in p["subject"]]
         y = (p["status"] == "SZ").astype(int).values
-        meta = pd.DataFrame({"sex": p["sex"].values if "sex" in p else "NA"}, index=items)
+        meta = pd.DataFrame(index=items)                   # v2: no demographics
         note = {}
         for ds in ("msu", "repod"):
             m = _subjects(ds, ["SZ", "HEALTHY"])

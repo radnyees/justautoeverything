@@ -8,6 +8,9 @@ Tasks
                  developing (DX 0), subjects passing Athena QC with a known diagnosis, 8 sites.
 items = list of subject ids; ctx["load_timeseries"](items, atlas, strategy) returns their ROI
 time series. Splits are grouped by subject (one scan each) and stratified by label x site.
+Protocol v2: no demographics (age/sex) or motion are provided; `site` is provided for
+harmonization only, and the metric is the WITHIN-SITE AUROC (size-weighted mean of per-site
+AUROCs), so learning site prevalence cannot help.
 """
 import json
 import os
@@ -18,6 +21,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core"))
+from metrics import within_site_auroc  # noqa: E402
 
 DATA = Path(os.environ.get("JAE_DATA", "/data")) / "fmri"
 TASKS = json.loads((Path(__file__).parent / "project.json").read_text())["tasks"]
@@ -50,11 +56,7 @@ def load(task):
                 ph = ph[ph["FILE_ID"].astype(str).isin(set(_ts_table("abide", st, at)))]
         items = ph["FILE_ID"].astype(str).tolist()
         y = (ph["DX_GROUP"] == 1).astype(int).values
-        meta = pd.DataFrame({"site": ph["SITE_ID"].astype(str).values,
-                             "age": ph["AGE_AT_SCAN"].astype(float).values,
-                             "sex": ph["SEX"].map({1: "M", 2: "F"}).values,
-                             "mean_fd": pd.to_numeric(ph["func_mean_fd"], errors="coerce").values},
-                            index=items)
+        meta = pd.DataFrame({"site": ph["SITE_ID"].astype(str).values}, index=items)
         ctx = {"dataset": "ABIDE I (PCP, CPAC)", "atlases": ABIDE_ATLASES,
                "strategies": ["filt_noglobal", "filt_global"], "load_timeseries": _loader("abide")}
     elif task == "adhd_adhd200":
@@ -66,17 +68,18 @@ def load(task):
         ph = ph.drop_duplicates("sid")
         items = ph["sid"].tolist()
         y = (ph["DX"].astype(str) != "0").astype(int).values
-        meta = pd.DataFrame({"site": ph["Site"].map(ADHD_SITES).values,
-                             "age": pd.to_numeric(ph["Age"], errors="coerce").values,
-                             "sex": ph["Gender"].map({0: "F", 1: "M"}).values}, index=items)
+        meta = pd.DataFrame({"site": ph["Site"].map(ADHD_SITES).values}, index=items)
         ctx = {"dataset": "ADHD-200 (Athena)", "atlases": ADHD_ATLASES, "strategies": ["athena"],
                "load_timeseries": _loader("adhd200")}
     else:
         raise KeyError(task)
     strata = np.array([f"{a}|{b}" for a, b in zip(y, meta["site"])])
     return {"items": items, "y": y, "groups": np.array(items), "strata": strata, "meta": meta,
-            "ctx": ctx, "external": {}}
+            "sites": meta["site"].values, "ctx": ctx, "external": {}}
 
 
-def score(y_true, y_pred, task):
-    return float(roc_auc_score(np.asarray(y_true), np.asarray(y_pred, dtype=float)))
+def score(y_true, y_pred, task, sites=None):
+    """Protocol v2: within-site AUROC (site prevalence differs; site is for harmonization only)."""
+    if sites is None:
+        return float(roc_auc_score(np.asarray(y_true), np.asarray(y_pred, dtype=float)))
+    return within_site_auroc(y_true, y_pred, sites)

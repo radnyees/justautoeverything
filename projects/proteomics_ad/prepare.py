@@ -17,6 +17,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core"))
+from metrics import within_site_auroc  # noqa: E402
 
 DATA = Path(os.environ.get("JAE_DATA", "/data")) / "proteomics_ad"
 TASKS = json.loads((Path(__file__).parent / "project.json").read_text())["tasks"]
@@ -35,14 +38,18 @@ def load(task):
         keep = m["clinical"].isin(["AD", "non-AD"]).values
         X, m = X.loc[keep], m.loc[keep]
         y = (m["clinical"] == "AD").astype(int).values
-        meta = m[["site", "age", "sex"]].copy()
+        meta = m[["site"]].copy()                          # v2: no age/sex; site for harmonization
         strata = np.array([f"{a}|{b}" for a, b in zip(y, m["site"])])
     else:
         raise KeyError(task)
     return {"items": X, "y": y, "groups": X.index.astype(str).values, "strata": strata,
-            "meta": meta, "ctx": {"matrix": "raw protein-group intensities, NaN = missing",
+            "meta": meta, "sites": meta["site"].values if task == "csf_ad" else None,
+            "ctx": {"matrix": "raw protein-group intensities, NaN = missing",
                                   "column_format": "GENE|ProteinGroup"}}
 
 
-def score(y_true, y_pred, task):
-    return float(roc_auc_score(np.asarray(y_true), np.asarray(y_pred, dtype=float)))
+def score(y_true, y_pred, task, sites=None):
+    """Protocol v2: csf_ad is scored WITHIN cohort/site; plasma_ad (one site) pooled."""
+    if sites is None:
+        return float(roc_auc_score(np.asarray(y_true), np.asarray(y_pred, dtype=float)))
+    return within_site_auroc(y_true, y_pred, sites)
