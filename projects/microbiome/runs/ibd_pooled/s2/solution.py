@@ -9,7 +9,10 @@ RF leaf size / feature fraction are tuned by grouped inner CV scored with within
 Depth harmonization: studies differ strongly in sequencing depth, so presence/absence and
 per-sample pseudocounts encode batch. A common detection limit L (1 / low-quantile training
 depth) zeroes genus abundances below L and a single pseudocount 0.5*L is used for CLR, making
-zeros and log-ratios comparable across studies."""
+zeros and log-ratios comparable across studies.
+Hurdle-style linear model: because zeros now mean "below a common detection limit" in every
+study, the logistic model also receives presence/absence indicators per genus, so taxon loss
+(a hallmark of IBD dysbiosis) is modelled separately from abundance shifts among carriers."""
 import numpy as np
 import pandas as pd
 from scipy.stats import rankdata
@@ -124,6 +127,11 @@ def _apply_floor(F, L):
     return pd.DataFrame(V, index=G.index, columns=G.columns)
 
 
+def _hurdle_design(X, pc):
+    """CLR abundances plus presence/absence indicators (common detection limit)."""
+    return np.hstack([_clr(X, pc), (np.asarray(X) > 0).astype(float)])
+
+
 def fit_predict(F_train, y_train, F_test, ctx):
     y = np.asarray(y_train)
     study = _train_study(y, ctx)
@@ -150,8 +158,8 @@ def fit_predict(F_train, y_train, F_test, ctx):
 
     try:
         sc = StandardScaler()
-        Ztr = sc.fit_transform(_clr(Xtr, 0.5 * L))
-        Zte = sc.transform(_clr(Xte, 0.5 * L))
+        Ztr = sc.fit_transform(_hurdle_design(Xtr, 0.5 * L))
+        Zte = sc.transform(_hurdle_design(Xte, 0.5 * L))
         lr = LogisticRegressionCV(Cs=np.logspace(-4, 0, 9), cv=splits,
                                   penalty="l2", scoring="roc_auc", max_iter=5000,
                                   solver="lbfgs", n_jobs=-1)

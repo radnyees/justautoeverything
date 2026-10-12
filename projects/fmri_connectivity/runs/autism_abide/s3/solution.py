@@ -1,16 +1,26 @@
 """Multi-atlas ensemble (cc200, cc400, aal, ho; no GSR): per atlas, tangent-space embedding of
 Ledoit-Wolf covariances with per-site Riemannian re-centering (site-wise log-Euclidean reference),
 followed by label-free per-site feature standardization (variance shrunk toward the pooled
-variance), and L2 logistic regression trained with site-by-class balanced sample weights (so the
-model learns within-site case/control contrasts, not site prevalence); standardized decision
+variance) and winsorization of the standardized features (robustness to artifact-driven outlier
+values). Large shared modes of the edges (global connectivity / motion / arousal-like nuisance)
+are estimated label-free as the top principal components over all subjects and the top k of them
+are projected out; k is chosen jointly with an edge-screening fraction (site-balanced class-mean
+difference) by grouped inner CV (within-site AUROC of a mean-difference proxy). Finally an L2
+logistic regression is trained with site-by-class balanced sample weights; standardized decision
 scores are averaged across atlases."""
 import numpy as np
 from sklearn.covariance import LedoitWolf
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import GroupKFold
 from sklearn.preprocessing import StandardScaler
 
 ATLASES = ["cc200", "cc400", "aal", "ho"]
 SHRINK_K = 10.0  # pseudo-count pulling each site's feature variance toward the pooled variance
+CLIP = 3.0  # winsorization bound (in within-site SD units) for site-standardized features
+FRACS = [0.05, 0.1, 0.2, 0.4, 1.0]  # candidate fractions of edges kept after screening
+K_OPTS = [0, 1, 2, 4, 8]  # candidate numbers of shared nuisance components removed
+INNER_SPLITS = 3
 
 
 def _lw_cov(x):
@@ -132,6 +142,20 @@ def _site_standardize(X, sites):
     return X
 
 
+def _top_pcs(X, kmax):
+    """Label-free top principal directions of the rows of X (via the n x n Gram matrix).
+    Returns scores T = X V (n x k) and orthonormal loadings V (p x k)."""
+    kmax = min(kmax, X.shape[0] - 1)
+    if kmax <= 0:
+        return np.zeros((X.shape[0], 0)), np.zeros((X.shape[1], 0))
+    G = X @ X.T
+    w, U = np.linalg.eigh(G)
+    idx = np.argsort(w)[::-1][:kmax]
+    w = np.maximum(w[idx], 1e-12)
+    V = (X.T @ U[:, idx]) / np.sqrt(w)
+    return X @ V, V
+
+
 def _site_balanced_weights(y, sites):
     """Weights making each site's classes contribute equally (site keeps its total weight);
     single-class sites keep unit weights. Normalized to mean 1."""
@@ -147,6 +171,53 @@ def _site_balanced_weights(y, sites):
     return w / w.mean()
 
 
+def _mean_diff(X, pos, w):
+    """Weighted positive-minus-negative class mean of each feature."""
+    wp, wn = w * pos, w * (~pos)
+    return (wp @ X) / max(wp.sum(), 1e-12) - (wn @ X) / max(wn.sum(), 1e-12)
+
+
+def _within_site_auc(score, pos, sites):
+    acc, tot = 0.0, 0
+    for s in np.unique(sites):
+        idx = np.where(sites == s)[0]
+        if pos[idx].all() or (~pos[idx]).all():
+            continue
+        acc += len(idx) * roc_auc_score(pos[idx], score[idx])
+        tot += len(idx)
+    return acc / tot if tot else 0.5
+
+
+def _choose(Xtr, Ttr, V, pos, s_tr, groups):
+    """Grouped inner CV jointly over the number of removed nuisance components and the screening
+    fraction, using a mean-difference projection as a cheap proxy for the heavily regularized
+    logistic regression. Residualized features X - T_k V_k^T are never materialized."""
+    k_opts = [k for k in K_OPTS if k <= V.shape[1]]
+    combos = [(k, f) for k in k_opts for f in FRACS[::-1]]  # ties -> fewer removed, more kept
+    n_groups = len(np.unique(groups))
+    n_splits = min(INNER_SPLITS, n_groups)
+    if n_splits < 2:
+        return 0, 1.0
+    res = np.zeros(len(combos))
+    for tr, va in GroupKFold(n_splits=n_splits).split(Xtr, pos, groups):
+        w = _site_balanced_weights(pos[tr].astype(int), s_tr[tr])
+        d0 = _mean_diff(Xtr[tr], pos[tr], w)
+        dT = _mean_diff(Ttr[tr], pos[tr], w)
+        Xv, Tv = Xtr[va], Ttr[va]
+        j = 0
+        for k in k_opts:
+            d = d0 - V[:, :k] @ dT[:k] if k > 0 else d0
+            order = np.argsort(-np.abs(d))
+            for f in FRACS[::-1]:
+                sel = order[:max(1, int(round(f * len(d))))]
+                s = Xv[:, sel] @ d[sel]
+                if k > 0:
+                    s = s - Tv[:, :k] @ (V[sel, :k].T @ d[sel])
+                res[j] += _within_site_auc(s, pos[va], s_tr[va])
+                j += 1
+    return combos[int(np.argmax(res))]
+
+
 def fit_predict(F_train, y_train, F_test, ctx):
     F_train = np.asarray(F_train, dtype=np.float64)
     F_test = np.asarray(F_test, dtype=np.float64)
@@ -155,16 +226,32 @@ def fit_predict(F_train, y_train, F_test, ctx):
     s_te = _sites(ctx.get("meta_test"), len(F_test))
     sites = np.concatenate([s_tr, s_te])
     y_train = np.asarray(y_train)
+    pos = y_train == np.unique(y_train)[-1]
     sw = _site_balanced_weights(y_train, s_tr)
+    groups = ctx.get("groups_train")
+    groups = np.arange(n_tr) if groups is None else np.asarray(groups)
+    if len(groups) != n_tr:
+        groups = np.arange(n_tr)
 
     covs = _unpack(np.concatenate([F_train, F_test], axis=0))
     score = np.zeros(len(F_test))
     for allC in covs:
         X = _tangent(allC, sites, n_tr)
         X = _site_standardize(X, sites)
+        np.clip(X, -CLIP, CLIP, out=X)  # winsorize artifact-driven extreme values
+        sc = StandardScaler().fit(X[:n_tr])
+        X = sc.transform(X)
+        T, V = _top_pcs(X, max(K_OPTS))
         Xtr, Xte = X[:n_tr], X[n_tr:]
-        sc = StandardScaler().fit(Xtr)
-        Xtr, Xte = sc.transform(Xtr), sc.transform(Xte)
+        k, frac = _choose(Xtr, T[:n_tr], V, pos, s_tr, groups)
+        if k > 0:
+            Xtr = Xtr - T[:n_tr, :k] @ V[:, :k].T
+            Xte = Xte - T[n_tr:, :k] @ V[:, :k].T
+        del X
+        if frac < 1.0:
+            d = _mean_diff(Xtr, pos, sw)
+            sel = np.argsort(-np.abs(d))[:max(1, int(round(frac * len(d))))]
+            Xtr, Xte = Xtr[:, sel], Xte[:, sel]
         clf = LogisticRegression(C=0.001, max_iter=5000)
         clf.fit(Xtr, y_train, sample_weight=sw)
         d_tr = clf.decision_function(Xtr)

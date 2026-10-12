@@ -214,6 +214,36 @@ def fig_families(hist):
     save(fig, "fig4_families")
 
 
+def fig_external(df):
+    """Seed vs champion on EXTERNAL datasets (other cohorts/sites), per split: do gains transfer?"""
+    rows = []
+    for run in (ROOT / "projects").glob("*/runs/*/s*/final_scores.json"):
+        fs = json.loads(run.read_text())
+        for name, e in fs.get("external", {}).items():
+            rows.append({"project": fs["project"], "task": fs["task"], "seed": fs["seed"], "ext": name,
+                         "seed_score": e["seed"], "champ": e["champion"],
+                         "internal_gain": fs["eval_gain"]})
+    if not rows:
+        return
+    d = pd.DataFrame(rows).sort_values(["project", "task", "ext", "seed"])
+    labels = [f"{r.task} -> {r.ext}  s{r.seed}" for r in d.itertuples()]
+    fig, ax = plt.subplots(figsize=(7.4, 0.32 * len(d) + 1.6))
+    ys = np.arange(len(d))[::-1]
+    for y, r in zip(ys, d.itertuples()):
+        c = color_of(r.project)
+        ax.plot([r.seed_score, r.champ], [y, y], color=c, lw=1.6, alpha=0.6)
+        ax.scatter([r.seed_score], [y], s=30, facecolor="white", edgecolor=c, linewidth=1.5, zorder=3)
+        ax.scatter([r.champ], [y], s=34, color=c, edgecolor="white", linewidth=1, zorder=4)
+    ax.axvline(0.5, color=REF, lw=1, ls="--")
+    ax.set_yticks(ys)
+    ax.set_yticklabels(labels, fontsize=7.5)
+    ax.set_xlabel("External-dataset score (AUROC); hollow = seed, filled = champion; dashed = chance")
+    ax.set_title("Transfer to external datasets (applied once, unchanged)", loc="left", fontweight="bold")
+    ax.grid(True, axis="x", color=GRID, lw=0.8)
+    ax.set_axisbelow(True)
+    save(fig, "fig5_external_transfer")
+
+
 def main():
     df, hist = load_runs()
     OUT.mkdir(exist_ok=True)
@@ -231,6 +261,7 @@ def main():
     fig_forest(df)
     fig_trajectories(df, hist)
     fig_families(hist)
+    fig_external(df)
     print(tasks.round(3).to_string() if not tasks.empty else "no finished tasks yet")
 
 
