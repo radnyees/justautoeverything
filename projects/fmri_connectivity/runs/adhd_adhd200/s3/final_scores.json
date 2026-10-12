@@ -1,0 +1,21 @@
+{
+  "project": "fmri_connectivity",
+  "task": "adhd_adhd200",
+  "seed": 3,
+  "dev_seed": 0.613304,
+  "dev_champion": 0.667262,
+  "eval_seed": 0.6346811846689896,
+  "eval_champion": 0.6493398937871367,
+  "dev_gain": 0.05395800000000006,
+  "eval_gain": 0.01465870911814715,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.044539807541224656,
+    "ci95": [
+      -0.06229264507502597,
+      0.11341312668449594
+    ],
+    "p_one_sided": 0.306
+  },
+  "external": {}
+}
