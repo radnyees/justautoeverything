@@ -1,0 +1,17 @@
+{
+  "title": "Resting-state EEG -> psychiatric disorders (depression, ADHD, schizophrenia)",
+  "families": ["preprocessing/filtering", "artifact-handling", "re-referencing", "absolute-band-power",
+    "relative-band-power", "spectral-ratios(theta/beta etc.)", "peak-alpha-frequency", "aperiodic/1-f-slope",
+    "alpha-asymmetry", "coherence/connectivity", "phase-synchrony(PLV/wPLI)", "covariance/riemannian",
+    "microstates", "complexity/fractal-dimension", "entropy", "time-domain/Hjorth", "graph-theory",
+    "eyes-open-vs-closed-reactivity", "feature-selection", "linear-model", "SVM/kernel", "tree-ensemble",
+    "gradient-boosting", "neural-net", "ensemble/stacking"],
+  "tasks": {
+    "mdd_tdbrain": {"size": "m", "cv_folds": 5, "metric": "AUROC",
+      "note": "Major depressive disorder (formal diagnosis) vs healthy controls, TDBRAIN V3.1 (Brainclinics, 2 min eyes-closed + 2 min eyes-open, 26-ch Ag/AgCl cap; here the 19 standard 10-20 channels shared with the external set), 250 Hz. Groups are age-matched; age is not provided. The champion is also applied once to the Mumtaz 2016 MDD dataset (another clinic and amplifier). Literature: leakage-free subject-independent MDD vs HC AUROC typically ~0.7-0.9 on small single-site sets; TDBRAIN-scale results are more modest."},
+    "adhd_tdbrain": {"size": "m", "cv_folds": 5, "metric": "AUROC",
+      "note": "ADHD/ADD (formal diagnosis) vs healthy controls, TDBRAIN V3.1, EC + EO, all 26 channels, 250 Hz. Groups are age-matched; age is not provided (EEG power changes strongly with age). The theta/beta ratio is the classic (and contested) ADHD marker; leakage-free subject-independent AUROC ~0.7."},
+    "sz_aseeg": {"size": "m", "cv_folds": 5, "metric": "AUROC",
+      "note": "Schizophrenia (DSM-5) vs healthy controls, ASEEG (51 SZ / 50 HC, 5 min eyes-closed), the 16 10-20 channels shared with the external sets, resampled to 128 Hz. The champion is applied once to MSU (45 SZ / 39 HC adolescents, 1 min EC) and RepOD (14 SZ / 14 HC). Leakage-free subject-level accuracies 58-81% (Racz & Csukly 2025)."}
+  }
+}

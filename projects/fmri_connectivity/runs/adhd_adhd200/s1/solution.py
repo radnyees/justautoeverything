@@ -8,7 +8,8 @@ Fisher-z connectivity for label-free data-driven modules at two scales, k=7 and 
 plus a whole-brain block (global-signal amplitude/coupling/autocorrelation, DVARS residual-motion proxies and
 effective dimensionality of the correlation spectrum, pooled across atlases).
 Per-site feature standardization (label-free, transductive) plus lightly-penalized site one-hot, sex one-hot
-and age covariate columns, L2 logistic regression per block, decision scores averaged across blocks."""
+and age covariate columns, moderately-penalized site x sex interaction columns (site-specific recruitment),
+L2 logistic regression per block, decision scores averaged across blocks."""
 import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.covariance import LedoitWolf
@@ -21,6 +22,9 @@ _WIN = 30
 _STEP = 3
 _MODULE_K = (7, 17)
 _N_GLOBAL = 12
+_COV_SCALE = 30.0
+_INTER_SCALE = 5.0
+_INTER_MIN = 5
 
 
 def _spd_fn(C, f):
@@ -364,6 +368,7 @@ def _covariates(ctx, n_tr, n_te):
     extra_tr, extra_te = [], []
     s_tr = _sites(m_tr, n_tr)
     s_te = _sites(m_te, n_te)
+    train_sites = None
     if s_tr is not None and s_te is not None:
         train_sites = np.unique(s_tr)
         extra_tr.append((s_tr.reshape(-1, 1) == train_sites.reshape(1, -1)).astype(np.float64))
@@ -378,6 +383,21 @@ def _covariates(ctx, n_tr, n_te):
             cats = cats[1:]
             extra_tr.append((x_tr.reshape(-1, 1) == cats.reshape(1, -1)).astype(np.float64))
             extra_te.append((x_te.reshape(-1, 1) == cats.reshape(1, -1)).astype(np.float64))
+            # site x sex interactions (site-specific recruitment of boys/girls per diagnostic group),
+            # given a smaller scale so they are shrunk toward the main effects
+            if train_sites is not None:
+                it_tr, it_te = [], []
+                for s in train_sites:
+                    for c in cats:
+                        col_tr = ((s_tr == s) & (x_tr == c)).astype(np.float64)
+                        if col_tr.sum() < _INTER_MIN or col_tr.sum() > len(col_tr) - _INTER_MIN:
+                            continue
+                        it_tr.append(col_tr)
+                        it_te.append(((s_te == s) & (x_te == c)).astype(np.float64))
+                if it_tr:
+                    r = _INTER_SCALE / _COV_SCALE
+                    extra_tr.append(np.column_stack(it_tr) * r)
+                    extra_te.append(np.column_stack(it_te) * r)
 
     a_tr = _age(m_tr, n_tr)
     a_te = _age(m_te, n_te)
@@ -406,7 +426,7 @@ def _fit_block(X_tr, X_te, y_train, s_tr, s_te, extra_tr, extra_te):
     X_tr = np.clip(sc.transform(X_tr), -6.0, 6.0)
     X_te = np.clip(sc.transform(X_te), -6.0, 6.0)
 
-    scale = 30.0
+    scale = _COV_SCALE
     if extra_tr:
         X_tr = np.hstack([X_tr] + [e * scale for e in extra_tr])
         X_te = np.hstack([X_te] + [e * scale for e in extra_te])

@@ -1,0 +1,12 @@
+{
+  "title": "Neonatal seizure detection (Helsinki neonatal EEG)",
+  "families": ["filtering/montage(bipolar)", "line-length/amplitude", "spectral-band-power", "rhythmicity/autocorrelation",
+    "spectral-edge/entropy", "nonlinear/complexity", "wavelet", "inter-channel/spatial-spread", "per-channel-vs-global",
+    "context-window/multi-scale", "temporal-smoothing/postprocessing", "artifact-handling", "class-imbalance-handling",
+    "per-neonate-normalization", "tree-ensemble", "gradient-boosting", "SVM/kernel", "linear-model", "neural-net(CNN/RNN)",
+    "ensemble/stacking"],
+  "tasks": {
+    "helsinki": {"size": "m", "cv_folds": 5, "metric": "concatenated AUROC (per-second)",
+      "note": "Helsinki neonatal EEG (Stevenson et al. 2019): 79 term neonates (39 with consensus seizures), 19 referential 10-20 electrodes at 256 Hz, ~74 min median; label = seizure per second by majority of 3 experts. Neonatal seizures are focal, rhythmic and evolving, often low-amplitude and from one region; morphology differs from adult seizures. Published neonate-independent concatenated AUROC: SVM (Tapani) ~0.955, deep nets ~0.96-0.98."}
+  }
+}

@@ -20,14 +20,18 @@ import numpy as np
 import pandas as pd
 
 Z = "https://zenodo.org/api/records/2547147/files/{}/content"
+RAW = ""                                            # set from argv[2]: directory with the raw files
 EEG_CH = ["Fp1", "Fp2", "F3", "F4", "C3", "C4", "P3", "P4", "O1", "O2", "F7", "F8", "T3", "T4",
           "T5", "T6", "Fz", "Cz", "Pz"]
 
 
 def get(name, tries=6):
+    local = os.path.join(RAW, name)                 # pre-uploaded copy (Zenodo blocks some clouds)
+    if RAW and os.path.exists(local):
+        return open(local, "rb").read()
     for t in range(tries):
         try:
-            return urllib.request.urlopen(Z.format(name), timeout=1800).read()
+            return urllib.request.urlopen(Z.format(name), timeout=300).read()
         except Exception as e:                      # Zenodo drops long downloads now and then
             print(f"retry {name} ({t + 1}): {e}", flush=True)
     raise RuntimeError(f"could not download {name}")
@@ -64,4 +68,5 @@ def main(out):
 
 
 if __name__ == "__main__":
+    RAW = sys.argv[2] if len(sys.argv) > 2 else ""
     main(sys.argv[1])
