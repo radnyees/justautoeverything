@@ -19,7 +19,7 @@ REPO = "/root/jae"
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("git", "curl", "unzip", "rsync", "openssh-client")
+    .apt_install("git", "curl", "unzip", "rsync", "openssh-client", "unar", "libarchive-tools")
     .pip_install(
         "numpy<2.3", "scipy", "pandas", "pyarrow", "scikit-learn", "statsmodels",
         "lightgbm", "xgboost", "catboost", "networkx", "PyWavelets", "antropy",

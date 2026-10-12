@@ -1,6 +1,7 @@
-"""Genus-level relative abundance, percentile-ranked within study (batch correction; absent taxa pinned to 0
-so absence means the same thing across studies) + study one-hot + a supervised dysbiosis score (median
-distance to same-study training controls) + extremely randomized trees."""
+"""Genus-level relative abundance, percentile-normalised against same-study training CONTROLS (Gibbons 2018
+case-control percentile normalisation; leave-own-subject-out for training items; absent taxa pinned to 0)
++ study one-hot + a supervised dysbiosis score (median distance, on within-study ranks, to same-study
+training controls) + extremely randomized trees."""
 import numpy as np
 import pandas as pd
 from scipy.spatial.distance import cdist
@@ -31,9 +32,11 @@ def featurize(items, ctx):
     # zero-abundance ties otherwise get a study-prevalence-dependent mid-rank; pin absence to 0
     R = R.where(G.values > 0, 0.0)
     R.columns = ["rk_" + str(c) for c in R.columns]
+    A = G.copy()
+    A.columns = ["ra_" + str(c) for c in G.columns]
     S = pd.get_dummies(study, prefix="study").astype(float)
     S.index = items.index
-    return pd.concat([R, S], axis=1)
+    return pd.concat([R, A, S], axis=1)
 
 
 def _dysbiosis(Xq, sq, gq, Xc, sc, gc):
@@ -50,6 +53,43 @@ def _dysbiosis(Xq, sq, gq, Xc, sc, gc):
     return out
 
 
+def _ctrl_percentile(Aq, sq, gq, Ac, sc, gc, fallback):
+    """Percentile (mean-kind, ties count half) of each query abundance within the same-study control
+    distribution, excluding controls of the query's own subject; absent taxa pinned to 0."""
+    out = fallback.astype(float).copy()
+    for st in np.unique(sq):
+        mq = np.where(sq == st)[0]
+        mc = np.where(sc == st)[0]
+        if len(mc) < 5:                                     # too few controls -> keep within-study rank
+            continue
+        C = Ac[mc]
+        Q = Aq[mq]
+        Cs = np.sort(C, axis=0)
+        P = np.empty_like(Q, dtype=float)
+        for j in range(Q.shape[1]):
+            lt = np.searchsorted(Cs[:, j], Q[:, j], side="left")
+            le = np.searchsorted(Cs[:, j], Q[:, j], side="right")
+            P[:, j] = lt + 0.5 * (le - lt)
+        nn = np.full(len(Q), float(len(mc)))
+        if gq is not None:
+            gcs = gc[mc]
+            subj_idx = {}
+            for k, u in enumerate(gcs):
+                subj_idx.setdefault(u, []).append(k)
+            gqs = gq[mq]
+            for i in range(len(Q)):
+                ks = subj_idx.get(gqs[i])
+                if not ks:
+                    continue
+                Csub = C[ks]
+                P[i] -= (Csub < Q[i]).sum(axis=0) + 0.5 * (Csub == Q[i]).sum(axis=0)
+                nn[i] -= len(ks)
+        P = P / np.clip(nn, 1, None)[:, None]
+        P[Q <= 0] = 0.0
+        out[mq] = P
+    return out
+
+
 def fit_predict(F_train, y_train, F_test, ctx):
     cols = F_train.columns                                  # align test features to training features
     Ftr = F_train[cols]
@@ -57,6 +97,7 @@ def fit_predict(F_train, y_train, F_test, ctx):
     y = np.asarray(y_train).astype(int)
 
     rk_cols = [c for c in cols if str(c).startswith("rk_")]
+    ra_cols = ["ra_" + str(c)[3:] for c in rk_cols]
     st_cols = [c for c in cols if str(c).startswith("study_")]
     if st_cols:
         s_tr = Ftr[st_cols].values.argmax(axis=1)
@@ -69,13 +110,20 @@ def fit_predict(F_train, y_train, F_test, ctx):
 
     Rtr = Ftr[rk_cols].values
     Rte = Fte[rk_cols].values
+    Atr = Ftr[ra_cols].values
+    Ate = Fte[ra_cols].values
     ctrl = y == 0
     d_tr = _dysbiosis(Rtr, s_tr, g_tr, Rtr[ctrl], s_tr[ctrl], g_tr[ctrl])
     d_te = _dysbiosis(Rte, s_te, None, Rtr[ctrl], s_tr[ctrl], g_tr[ctrl])
 
-    Xtr = np.column_stack([Ftr.values, d_tr])
-    Xte = np.column_stack([Fte.values, d_te])
-    # random split thresholds smooth over noisy, tie-heavy within-study rank cut points
+    P_tr = _ctrl_percentile(Atr, s_tr, g_tr, Atr[ctrl], s_tr[ctrl], g_tr[ctrl], Rtr)
+    P_te = _ctrl_percentile(Ate, s_te, None, Atr[ctrl], s_tr[ctrl], g_tr[ctrl], Rte)
+
+    S_tr = Ftr[st_cols].values if st_cols else np.zeros((len(Ftr), 0))
+    S_te = Fte[st_cols].values if st_cols else np.zeros((len(Fte), 0))
+    Xtr = np.column_stack([P_tr, S_tr, d_tr])
+    Xte = np.column_stack([P_te, S_te, d_te])
+    # random split thresholds smooth over noisy, tie-heavy within-study percentile cut points
     et = ExtraTreesClassifier(n_estimators=1000, min_samples_leaf=2, max_features="sqrt",
                               random_state=0, n_jobs=-1)
     et.fit(Xtr, y)

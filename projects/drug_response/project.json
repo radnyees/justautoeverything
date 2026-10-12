@@ -1,0 +1,12 @@
+{
+  "title": "Drug response from CCLE gene expression (PRISM Repurposing)",
+  "families": ["gene-filtering/variance", "expression-normalization", "pathway-scores(hallmark/reactome)",
+    "network-propagation(STRING)", "drug-target-genes", "moa-informed-features", "lineage/covariates",
+    "dimensionality-reduction", "multi-task/shared-model", "drug-similarity-sharing", "linear-model",
+    "regularized-linear", "kernel/GP", "tree-ensemble", "gradient-boosting", "neural-net", "ensemble/stacking",
+    "target-transformation"],
+  "tasks": {
+    "prism_auc": {"size": "l", "cv_folds": 5, "metric": "mean per-drug Pearson r",
+      "note": "PRISM Repurposing secondary screen (Corsello et al. 2020): dose-response AUC of the 200 most variable, well-covered drugs on ~480 cancer cell lines; predict from baseline CCLE expression (DepMap 24Q4, ~19k protein-coding genes). Metric: mean per-drug Pearson r on held-out cell lines. Published held-out-cell-line baselines: median per-drug r ~0.40 on GDSC (Carli 2025); few PRISM non-oncology drugs exceed 0.4."}
+  }
+}

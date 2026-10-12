@@ -204,6 +204,8 @@ def run(solution_path):
 def _jsonable(x):
     if x is None:
         return None
+    if hasattr(x, "to_numpy"):                     # pandas DataFrame / Series
+        return x.to_numpy().tolist()
     if hasattr(x, "tolist"):
         return x.tolist()
     if isinstance(x, (list, tuple)):

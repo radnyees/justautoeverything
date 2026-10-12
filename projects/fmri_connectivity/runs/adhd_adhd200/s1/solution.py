@@ -3,10 +3,14 @@
 lag-1/lag-2 autocorrelation as low-frequency-dominance proxies, pooled across atlases), plus a node-strength
 block (per-ROI global connectivity: mean signed and mean absolute Fisher-z correlation, pooled across atlases),
 plus a dynamic-connectivity block (per-ROI sliding-window temporal variability of the connectivity profile and
-SD of windowed node strength, pooled across atlases).
+SD of windowed node strength, pooled across atlases), plus a network-summary block (within/between-module mean
+Fisher-z connectivity for label-free data-driven modules at two scales, k=7 and k=17, pooled across atlases),
+plus a whole-brain block (global-signal amplitude/coupling/autocorrelation, DVARS residual-motion proxies and
+effective dimensionality of the correlation spectrum, pooled across atlases).
 Per-site feature standardization (label-free, transductive) plus lightly-penalized site one-hot, sex one-hot
 and age covariate columns, L2 logistic regression per block, decision scores averaged across blocks."""
 import numpy as np
+from sklearn.cluster import KMeans
 from sklearn.covariance import LedoitWolf
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
@@ -15,6 +19,8 @@ _ATLASES = ["cc200", "aal", "ho"]
 _MAX_BLOCKS = 8
 _WIN = 30
 _STEP = 3
+_MODULE_K = (7, 17)
+_N_GLOBAL = 12
 
 
 def _spd_fn(C, f):
@@ -146,6 +152,109 @@ def _dynamic_feats(ts):
     return _impute_median(rows)
 
 
+def _fz_full(x):
+    """Full ROI x ROI Fisher-z correlation with NaN for out-of-FOV ROIs and on the diagonal."""
+    x = np.nan_to_num(np.asarray(x, dtype=np.float64))
+    x = x - x.mean(axis=0)
+    sd = x.std(axis=0)
+    good = sd > 1e-8
+    n_roi = x.shape[1]
+    fz = np.full((n_roi, n_roi), np.nan)
+    if good.sum() > 2:
+        z = x[:, good] / sd[good]
+        r = np.clip((z.T @ z) / z.shape[0], -0.999, 0.999)
+        fz[np.ix_(good, good)] = np.arctanh(r)
+    np.fill_diagonal(fz, np.nan)
+    return fz
+
+
+def _module_feats(ts):
+    """Network summaries: label-free modules from KMeans on group-mean FC profiles (two scales),
+    then per-subject mean Fisher-z connectivity within and between each pair of modules."""
+    n_roi = np.asarray(ts[0]).shape[1]
+    S = np.zeros((n_roi, n_roi))
+    Cnt = np.zeros((n_roi, n_roi))
+    for x in ts:
+        fz = _fz_full(x)
+        v = np.isfinite(fz)
+        S += np.where(v, fz, 0.0)
+        Cnt += v
+    G = S / np.maximum(Cnt, 1.0)
+    np.fill_diagonal(G, 0.0)
+
+    mats = []
+    for k in _MODULE_K:
+        k = int(min(k, max(2, n_roi // 3)))
+        lab = KMeans(n_clusters=k, n_init=10, random_state=0).fit_predict(G)
+        M = np.zeros((n_roi, k))
+        M[np.arange(n_roi), lab] = 1.0
+        mats.append(M)
+
+    rows = []
+    for x in ts:
+        fz = _fz_full(x)
+        v = np.isfinite(fz).astype(np.float64)
+        Z = np.where(v > 0, fz, 0.0)
+        parts = []
+        for M in mats:
+            sums = M.T @ Z @ M
+            cnts = M.T @ v @ M
+            with np.errstate(invalid="ignore", divide="ignore"):
+                means = np.where(cnts > 0, sums / np.maximum(cnts, 1.0), np.nan)
+            iu = np.triu_indices(M.shape[1], k=0)
+            parts.append(means[iu])
+        rows.append(np.concatenate(parts))
+    return _impute_median(rows)
+
+
+def _global_feats(ts):
+    """Whole-brain descriptors: global-signal amplitude, synchrony, ROI coupling, autocorrelation and
+    kurtosis (vigilance/arousal markers); DVARS level, spikiness and spike fraction (residual-motion proxies);
+    and leading-eigenvalue fraction, participation ratio and spectral entropy of the correlation matrix."""
+    rows = []
+    for x in ts:
+        x = np.nan_to_num(np.asarray(x, dtype=np.float64))
+        x = x - x.mean(axis=0)
+        sd = x.std(axis=0)
+        good = sd > 1e-8
+        ng = int(good.sum())
+        f = np.full(_N_GLOBAL, np.nan)
+        n_t = x.shape[0]
+        if ng > 3 and n_t > 5:
+            xg = x[:, good]
+            sg = sd[good]
+            z = xg / sg
+            gs_raw = xg.mean(axis=1)
+            gsz = z.mean(axis=1)
+            f[0] = np.log(gs_raw.std() + 1e-12)
+            f[1] = np.log(np.mean(sg))
+            f[2] = gsz.var()  # ~ mean pairwise correlation (global synchrony)
+            gsd = gsz.std()
+            if gsd > 1e-8:
+                g = gsz / gsd
+                r = (z.T @ g) / n_t
+                f[3] = np.mean(r ** 2)
+                f[4] = np.mean(g[1:] * g[:-1])
+                f[5] = np.mean(g ** 4) - 3.0
+            d = np.diff(z, axis=0)
+            dv = np.sqrt(np.mean(d ** 2, axis=1))
+            med = np.median(dv)
+            if med > 1e-8:
+                f[6] = np.log(np.mean(dv))
+                f[7] = np.log(np.percentile(dv, 95) / med)
+                f[8] = np.mean(dv > 1.5 * med)
+            ev = np.maximum(np.linalg.eigvalsh((z.T @ z) / n_t), 0.0)
+            s = ev.sum()
+            if s > 1e-8:
+                p = ev / s
+                f[9] = ev.max() / s
+                f[10] = (s ** 2 / np.sum(ev ** 2)) / min(ng, n_t)
+                pp = p[p > 1e-12]
+                f[11] = -np.sum(pp * np.log(pp)) / np.log(min(ng, n_t))
+        rows.append(f)
+    return _impute_median(rows)
+
+
 def featurize(items, ctx):
     strategy = "filt_noglobal" if "filt_noglobal" in ctx["strategies"] else ctx["strategies"][0]
     atlases = [a for a in _ATLASES if a in ctx["atlases"]]
@@ -155,16 +264,22 @@ def featurize(items, ctx):
     ts_blocks = []
     st_blocks = []
     dyn_blocks = []
+    mod_blocks = []
+    glob_blocks = []
     for a in atlases:
         ts = ctx["load_timeseries"](items, a, strategy)
         blocks.append(_tangent_feats(ts))
         ts_blocks.append(_ts_feats(ts))
         st_blocks.append(_strength_feats(ts))
         dyn_blocks.append(_dynamic_feats(ts))
+        mod_blocks.append(_module_feats(ts))
+        glob_blocks.append(_global_feats(ts))
         del ts
     blocks.append(np.hstack(ts_blocks))
     blocks.append(np.hstack(st_blocks))
     blocks.append(np.hstack(dyn_blocks))
+    blocks.append(np.hstack(mod_blocks))
+    blocks.append(np.hstack(glob_blocks))
     n = len(items)
     # header: block sizes (constant per item) so fit_predict can split the blocks
     header = np.zeros((n, _MAX_BLOCKS), dtype=np.float32)

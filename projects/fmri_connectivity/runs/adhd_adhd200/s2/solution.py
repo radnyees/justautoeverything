@@ -1,15 +1,21 @@
 """Ledoit-Wolf shrinkage covariance on CC200 (z-scored series) -> Riemannian re-centering per
 site (each site's covariances whitened by that site's geometric mean, label-free) -> tangent space
-at identity, upper triangle, L2 logistic regression. Stacked with demographic covariates
-(sex, age, site) via inner grouped CV out-of-fold scores."""
+at identity, upper triangle -> per-site feature-wise variance standardization (ComBat-style scale
+correction, shrunk toward pooled within-site variance) -> L2 logistic regression with C chosen by
+grouped inner CV. Stacked with demographic covariates (sex, age, site) via inner grouped CV
+out-of-fold scores."""
 import numpy as np
 import pandas as pd
 from sklearn.covariance import ledoit_wolf
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import GroupKFold, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 
 MIN_SITE = 10
+VAR_PRIOR = 10.0  # pseudo-count shrinking per-site feature variance toward pooled within-site variance
+C_GRID = [1e-4, 3e-4, 1e-3, 3e-3, 1e-2]
+C_DEFAULT = 1e-3
 
 
 def _sym_fn(m, fn):
@@ -62,6 +68,33 @@ def _item_sites(items, ctx):
     return None
 
 
+def _site_scale(F, sites):
+    """Per-site feature-wise centering and variance standardization (label-free).
+    Site variances are shrunk toward the pooled within-site variance; small sites use pooled."""
+    F = F.copy()
+    big = []
+    for s in np.unique(sites):
+        idx = np.where(sites == s)[0]
+        if len(idx) >= MIN_SITE:
+            big.append(idx)
+    if not big:
+        return F
+    resid = np.concatenate([F[idx] - F[idx].mean(0) for idx in big], axis=0)
+    pooled_var = resid.var(0)
+    pooled_var[pooled_var < 1e-12] = 1e-12
+    for idx in big:
+        mu = F[idx].mean(0)
+        v = F[idx].var(0)
+        n = len(idx)
+        v_shr = (n * v + VAR_PRIOR * pooled_var) / (n + VAR_PRIOR)
+        F[idx] = (F[idx] - mu) / np.sqrt(np.maximum(v_shr, 1e-12))
+    big_set = set(np.concatenate(big).tolist())
+    small = np.array([i for i in range(len(F)) if i not in big_set], dtype=int)
+    if len(small):
+        F[small] = F[small] / np.sqrt(pooled_var)
+    return F
+
+
 def featurize(items, ctx):
     strategy = "filt_noglobal" if "filt_noglobal" in ctx["strategies"] else ctx["strategies"][0]
     ts = ctx["load_timeseries"](items, "cc200", strategy)
@@ -100,17 +133,17 @@ def featurize(items, ctx):
     for c, W in zip(covs, whiten):
         t = _sym_fn(W @ c @ W, np.log)
         feats.append(t[iu] * wts)
-    F = np.asarray(feats, dtype=np.float32)
+    F = np.asarray(feats, dtype=np.float64)
+    F = np.nan_to_num(F, nan=0.0, posinf=0.0, neginf=0.0)
+    if sites is not None:
+        F = _site_scale(F, np.asarray(sites))
+    F = F.astype(np.float32)
     return np.nan_to_num(F, nan=0.0, posinf=0.0, neginf=0.0)
 
 
-def _conn_model():
-    return LogisticRegression(C=0.001, max_iter=5000)
-
-
-def _conn_fit_score(Xtr, ytr, Xte):
+def _conn_fit_score(Xtr, ytr, Xte, C):
     sc = StandardScaler().fit(Xtr)
-    clf = _conn_model().fit(sc.transform(Xtr), ytr)
+    clf = LogisticRegression(C=C, max_iter=5000).fit(sc.transform(Xtr), ytr)
     return clf.decision_function(sc.transform(Xte))
 
 
@@ -160,12 +193,38 @@ def _covariates(mtr, mte):
     return np.column_stack(cols_tr), np.column_stack(cols_te)
 
 
+def _inner_oof(Xtr, y, groups):
+    """Out-of-fold connectivity scores for each C in the grid; returns (best_C, oof_of_best)."""
+    if groups is not None and len(np.unique(groups)) >= 5:
+        splits = list(GroupKFold(n_splits=5).split(Xtr, y, np.asarray(groups)))
+    else:
+        splits = list(StratifiedKFold(n_splits=5, shuffle=True, random_state=0).split(Xtr, y))
+    best_C, best_auc, best_oof = None, -np.inf, None
+    for C in C_GRID:
+        oof = np.zeros(len(y))
+        for tr, va in splits:
+            oof[va] = _conn_fit_score(Xtr[tr], y[tr], Xtr[va], C)
+        try:
+            auc = roc_auc_score(y, oof)
+        except ValueError:
+            auc = 0.5
+        if auc > best_auc + 1e-4:
+            best_C, best_auc, best_oof = C, auc, oof
+    if best_C is None:
+        best_C = C_DEFAULT
+        best_oof = np.zeros(len(y))
+        for tr, va in splits:
+            best_oof[va] = _conn_fit_score(Xtr[tr], y[tr], Xtr[va], best_C)
+    return best_C, best_oof
+
+
 def fit_predict(F_train, y_train, F_test, ctx):
     Xtr = np.asarray(F_train, dtype=np.float64)
     Xte = np.asarray(F_test, dtype=np.float64)
     y = np.asarray(y_train).astype(int)
 
-    test_score = _conn_fit_score(Xtr, y, Xte)
+    best_C, oof = _inner_oof(Xtr, y, ctx.get("groups_train"))
+    test_score = _conn_fit_score(Xtr, y, Xte, best_C)
 
     mtr = _to_df(ctx.get("meta_train"), len(y))
     mte = _to_df(ctx.get("meta_test"), len(Xte))
@@ -174,16 +233,6 @@ def fit_predict(F_train, y_train, F_test, ctx):
     Ctr, Cte = _covariates(mtr, mte)
     if Ctr is None:
         return test_score
-
-    # Out-of-fold connectivity scores on the training fold (grouped inner CV)
-    groups = ctx.get("groups_train")
-    oof = np.zeros(len(y))
-    if groups is not None and len(np.unique(groups)) >= 5:
-        splitter = GroupKFold(n_splits=5).split(Xtr, y, np.asarray(groups))
-    else:
-        splitter = StratifiedKFold(n_splits=5, shuffle=True, random_state=0).split(Xtr, y)
-    for tr, va in splitter:
-        oof[va] = _conn_fit_score(Xtr[tr], y[tr], Xtr[va])
 
     Ztr = np.column_stack([oof, Ctr])
     Zte = np.column_stack([test_score, Cte])
