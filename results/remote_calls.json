@@ -22,5 +22,8 @@
  "proteomics_ad/csf_ad/s3": "fc-01M4QTW8WJCSTM8Y2DZR1Z6CQE",
  "eeg_psych/abnormal_tuab/s1": "fc-01M4QYFS2253NE7VD6NJXJJMFP",
  "eeg_psych/abnormal_tuab/s2": "fc-01M4QYFSBK01ABR5T95N7QBP5J",
- "eeg_psych/abnormal_tuab/s3": "fc-01M4QYFSVE49EHQ6JGQM5DR7V3"
+ "eeg_psych/abnormal_tuab/s3": "fc-01M4QYFSVE49EHQ6JGQM5DR7V3",
+ "neonatal_seizure/helsinki/s1": "fc-01M4QYVFQXCMRHYQSYAWTBJD62",
+ "neonatal_seizure/helsinki/s2": "fc-01M4QYVG1ZZN9XJWYTTRRXTPM4",
+ "neonatal_seizure/helsinki/s3": "fc-01M4QYVGE2T6X4EE2RSWQ1B7CR"
 }

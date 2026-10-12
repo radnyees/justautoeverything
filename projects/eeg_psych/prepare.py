@@ -109,6 +109,7 @@ def load(task):
         note = {"age_matched_range": age_range}
         if task == "mdd_tdbrain":
             m = _subjects("mumtaz", ["MDD", "HEALTHY"])
+            m = m[[_raw(f"mumtaz:{s}", "EC") is not None for s in m["subject"]]]   # EC required, as for TDBRAIN
             ext_items = [f"mumtaz:{s}" for s in m["subject"]]
             external["mumtaz"] = {"items": ext_items, "y": (m["status"] == "MDD").astype(int).values,
                                   "groups": np.array(ext_items), "meta": pd.DataFrame(index=ext_items)}
