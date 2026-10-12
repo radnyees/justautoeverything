@@ -51,7 +51,11 @@ def main(out):
           with tempfile.NamedTemporaryFile(suffix=".edf") as tf:
             tf.write(get(f"eeg{i}.edf"))
             tf.flush()
-            raw = mne.io.read_raw_edf(tf.name, preload=True, verbose="ERROR")
+            try:
+                raw = mne.io.read_raw_edf(tf.name, preload=True, verbose="ERROR")
+            except ValueError as e:
+                print(f"BAD eeg{i}.edf ({e})", flush=True)
+                continue
           names = {c.upper().replace("EEG ", "").replace("-REF", "").strip(): c for c in raw.ch_names}
           picks = [names[c.upper()] for c in EEG_CH]
           x = raw.get_data(picks=picks) * 1e6                   # volts -> microvolts

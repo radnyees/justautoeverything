@@ -43,8 +43,21 @@ def _info(dataset):
 
 
 @lru_cache(maxsize=None)
+def _packed(dataset, cond):
+    """Memory-mapped packed corpus (TUAB): (array, {subject: [row, n_samples]}) or None."""
+    f = DATA / dataset / f"{cond}.npy"
+    if not f.exists():
+        return None
+    return np.load(f, mmap_mode="r"), json.loads((DATA / dataset / f"{cond}_index.json").read_text())
+
+
+@lru_cache(maxsize=None)
 def _raw(item, cond):
     dataset, subj = item.split(":", 1)
+    pk = _packed(dataset, cond)
+    if pk is not None:
+        row, n = pk[1][subj]
+        return np.asarray(pk[0][row, :, :n])
     z = np.load(DATA / dataset / f"{subj}.npz")
     return z[cond] if cond in z.files else None
 
