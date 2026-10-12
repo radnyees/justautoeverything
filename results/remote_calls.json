@@ -4,5 +4,8 @@
  "eeg_psych/adhd_tdbrain/s3": "fc-01M4QNXSMHZGMFV6GYXAE7PFS2",
  "eeg_psych/mdd_tdbrain/s1": "fc-01M4QNXTTC2SMQKG6GSX7TBG7H",
  "eeg_psych/mdd_tdbrain/s2": "fc-01M4QNXV46J6NTFYV107Q4WVS8",
- "eeg_psych/mdd_tdbrain/s3": "fc-01M4QNXVF0RMVVGSPVAF5DJCB7"
+ "eeg_psych/mdd_tdbrain/s3": "fc-01M4QNXVF0RMVVGSPVAF5DJCB7",
+ "eeg_psych/sz_aseeg/s1": "fc-01M4QTJXERHJ08WEAKN815WVAR",
+ "eeg_psych/sz_aseeg/s2": "fc-01M4QTJXQZ07NRP4G1D6YAEDK7",
+ "eeg_psych/sz_aseeg/s3": "fc-01M4QTJY575J2QAB0ZKY8GFYRK"
 }

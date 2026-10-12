@@ -2,30 +2,42 @@
 activity scores (mean of train-standardized member genes, re-standardized, scaled to the same total
 kernel trace as the gene block times gamma). The line x line kernel is the linear kernel of these
 features plus eta times a centered Gaussian RBF kernel on the gene block (median-distance bandwidth,
-trace-matched to the linear kernel). Multi-output kernel ridge (alpha=5000) on per-drug z-scored AUC
-targets, followed by reduced-rank projection of predictions onto the top-k right singular vectors of
-the fitted drug-response matrix. On top of the shared low-rank prediction, a per-drug target-gene term
-is added (ridge with drug's annotated target genes up-weighted; its difference from the base ridge is
-added after projection). Missing training AUCs (z-space) are either zero-filled (r=0) or imputed by
-rank-r hard-impute SVD of the training response matrix. (gamma, eta, k, target weight) are chosen
-jointly by grouped inner CV on mean per-drug Pearson r; r is chosen in a second stage at best
-(gamma, eta)."""
+trace-matched to the linear kernel). Multi-output kernel ridge (alpha=5000) on per-drug transformed AUC
+targets (plain z-score, z-score winsorized at +-2.5, or rank-to-Gaussian of observed values), followed
+by soft reduced-rank projection: predictions are projected onto the top-k right singular vectors of the
+fitted drug-response matrix, and a fraction lam of the out-of-subspace residual is kept (lam=0 is hard
+truncation). On top of the shared low-rank prediction, a per-drug target-gene term is added (ridge with
+drug's annotated target genes up-weighted; its difference from the base ridge is added after
+projection). Finally, each drug's z-space prediction is mixed (weight rho) with the mean prediction of
+its annotated neighbours (Jaccard overlap of MOA tokens and target genes). Missing training AUCs
+(z-space) are either zero-filled (r=0) or imputed by rank-r hard-impute SVD of the training response
+matrix. (gamma, eta, k, lam, target weight, rho) are chosen jointly by grouped inner CV on mean per-drug
+Pearson r; r is chosen in a second stage at best (gamma, eta); the target transform in a third stage.
+The top-10 inner-CV configurations are retained; the final prediction averages the top-M of them (z-space),
+with M chosen by the inner-CV score of the averaged out-of-fold predictions (M=1 = single best)."""
 import os
 import re
 import gzip
 import numpy as np
 import pandas as pd
 from scipy import sparse
+from scipy.stats import rankdata, norm
 from sklearn.model_selection import GroupKFold, KFold
 from sklearn.preprocessing import StandardScaler
 
 ALPHA = 5000.0
 N_GENES = 5000
 K_GRID = [1, 2, 3, 5, 8, 12, 20, 30, 50, 80, 200]
+LAM_GRID = [0.0, 0.2, 0.5]
 W2_GRID = [0.0, 100.0, 500.0, 2500.0]
 G_GRID = [0.0, 0.5, 2.0]
 ETA_GRID = [0.0, 0.5, 2.0]
 R_GRID = [3, 8, 20]
+RHO_GRID = [0.0, 0.25, 0.5]
+T_GRID = ["clip", "rg"]
+M_GRID = [1, 2, 3, 5, 8]
+TOPN = 10
+CLIP = 2.5
 IMPUTE_ITERS = 50
 MAX_TARGETS = 10
 MIN_SET, MAX_SET = 10, 500
@@ -41,6 +53,23 @@ def _zscore(Ydf):
     Z = (Ydf.values.astype(float) - m) / s
     Z = np.where(np.isnan(Z), 0.0, Z)
     return Z, m, s
+
+
+def _transform(Ydf, t):
+    """Per-drug target transform in z-space; missing entries are 0."""
+    Z, m, s = _zscore(Ydf)
+    Y = Ydf.values.astype(float)
+    obs = ~np.isnan(Y)
+    if t == "clip":
+        Z = np.clip(Z, -CLIP, CLIP)
+    elif t == "rg":
+        for j in range(Z.shape[1]):
+            o = obs[:, j]
+            n = int(o.sum())
+            if n >= 2:
+                rk = rankdata(Y[o, j])
+                Z[o, j] = norm.ppf((rk - 0.5) / n)
+    return Z, obs, m, s
 
 
 def _impute(Z, obs, r):
@@ -60,9 +89,8 @@ def _impute(Z, obs, r):
     return X
 
 
-def _prep_targets(Ydf, r):
-    Z, m, s = _zscore(Ydf)
-    obs = ~np.isnan(Ydf.values.astype(float))
+def _prep_targets(Ydf, r, t="z"):
+    Z, obs, m, s = _transform(Ydf, t)
     return _impute(Z, obs, r), m, s
 
 
@@ -114,34 +142,54 @@ def _target_deltas(K, Kte, Ttr, Tte, Y, mu, P_te_base, idx_list, alpha, w2s):
     return out
 
 
-def _project(P_tr, P_te, mu, ks):
+def _project(P_tr, P_te, mu, ks, lams):
+    """Soft reduced-rank projection: top-k subspace plus lam times the out-of-subspace residual."""
     _, _, Vt = np.linalg.svd(P_tr - mu, full_matrices=False)
+    D = P_te - mu
     out = {}
     for k in ks:
         V = Vt[:min(k, Vt.shape[0])].T
-        out[k] = mu + ((P_te - mu) @ V) @ V.T
+        Pk = (D @ V) @ V.T
+        for lam in lams:
+            out[(k, lam)] = mu + Pk + lam * (D - Pk)
     return out
 
 
 def _mean_pearson(P, Yobs):
-    rs = []
-    for j in range(Yobs.shape[1]):
-        m = ~np.isnan(Yobs[:, j])
-        if m.sum() < 3:
-            continue
-        p, y = P[m, j], Yobs[m, j]
-        if p.std() < 1e-12 or y.std() < 1e-12:
-            continue
-        rs.append(np.corrcoef(p, y)[0, 1])
-    return np.mean(rs) if rs else 0.0
+    """Vectorized mean over drugs of Pearson r on observed entries."""
+    M = ~np.isnan(Yobs)
+    Mf = M.astype(float)
+    Y0 = np.where(M, Yobs, 0.0)
+    n = Mf.sum(0)
+    nn = np.maximum(n, 1.0)
+    Pm = P * Mf
+    sp, sy = Pm.sum(0), Y0.sum(0)
+    spp, syy, spy = (Pm * P).sum(0), (Y0 * Y0).sum(0), (Pm * Y0).sum(0)
+    cov = spy - sp * sy / nn
+    vp = spp - sp * sp / nn
+    vy = syy - sy * sy / nn
+    ok = (n >= 3) & (vp > nn * 1e-24) & (vy > nn * 1e-24)
+    if not ok.any():
+        return 0.0
+    r = cov[ok] / np.sqrt(vp[ok] * vy[ok])
+    return float(np.mean(r))
+
+
+def _drug_table(ctx, drug_cols):
+    drugs = ctx.get("drugs", None)
+    if drugs is None:
+        return None
+    if "broad_id" in drugs.columns and set(drug_cols).issubset(set(drugs["broad_id"])):
+        drugs = drugs.drop_duplicates("broad_id").set_index("broad_id").reindex(drug_cols)
+    if len(drugs) != len(drug_cols):
+        return None
+    return drugs
 
 
 def _drug_targets(ctx, drug_cols, gene_cols):
-    drugs = ctx.get("drugs", None)
+    drugs = _drug_table(ctx, drug_cols)
     if drugs is None or "target" not in drugs.columns:
         return [[] for _ in drug_cols]
-    if "broad_id" in drugs.columns and set(drug_cols).issubset(set(drugs["broad_id"])):
-        drugs = drugs.drop_duplicates("broad_id").set_index("broad_id").reindex(drug_cols)
     gset = set(gene_cols)
     out = []
     for t in drugs["target"].values:
@@ -155,6 +203,44 @@ def _drug_targets(ctx, drug_cols, gene_cols):
                 gs.append(g)
         out.append(gs[:MAX_TARGETS])
     return out
+
+
+def _tokens(v, pat):
+    if not isinstance(v, str):
+        return set()
+    return {t.strip().upper() for t in re.split(pat, v) if t.strip()}
+
+
+def _drug_neighbour_matrix(ctx, drug_cols):
+    """Row-stochastic drug x drug mixing matrix from MOA / target Jaccard overlap (self excluded);
+    drugs with no annotated neighbour map to themselves."""
+    nd = len(drug_cols)
+    W = np.eye(nd)
+    drugs = _drug_table(ctx, drug_cols)
+    if drugs is None:
+        return W, False
+    moas = [_tokens(v, r"[,|;]") for v in (drugs["moa"].values if "moa" in drugs.columns
+                                             else [None] * nd)]
+    tgts = [_tokens(v, r"[,|;/]") for v in (drugs["target"].values if "target" in drugs.columns
+                                              else [None] * nd)]
+
+    def jac(a, b):
+        if not a or not b:
+            return 0.0
+        return len(a & b) / len(a | b)
+
+    S = np.zeros((nd, nd))
+    for i in range(nd):
+        for j in range(i + 1, nd):
+            v = 0.5 * jac(moas[i], moas[j]) + 0.5 * jac(tgts[i], tgts[j])
+            S[i, j] = S[j, i] = v
+    rs = S.sum(1)
+    any_nb = False
+    for i in range(nd):
+        if rs[i] > 1e-12:
+            W[i] = S[i] / rs[i]
+            any_nb = True
+    return W, any_nb
 
 
 def _gmt_paths(ctx):
@@ -293,7 +379,15 @@ def fit_predict(F_train, y_train, F_test, ctx):
         idx_list = [[] for _ in targ]
         w2_grid = [0.0]
 
-    # inner grouped CV to choose pathway weight gamma, RBF weight eta, rank k and target weight w2
+    # MOA / target neighbour mixing matrix
+    try:
+        Wnb, any_nb = _drug_neighbour_matrix(ctx, list(y_train.columns))
+    except Exception:
+        Wnb, any_nb = np.eye(Z.shape[1]), False
+    rho_grid = RHO_GRID if any_nb else [0.0]
+    WnbT = Wnb.T
+
+    # inner grouped CV to choose gamma, eta, k, lam, w2, rho, r and target transform
     groups = ctx.get("groups_train", None)
     if groups is not None and len(np.unique(groups)) >= 5:
         splits = list(GroupKFold(n_splits=5).split(Xg_tr, groups=np.asarray(groups)))
@@ -317,51 +411,101 @@ def fit_predict(F_train, y_train, F_test, ctx):
             out.append((K, Kva))
         return out
 
-    def evaluate(kernels, r, best, best_s, tag):
-        oof_proj = {k: np.zeros_like(Z) for k in K_GRID}
+    proj_keys = [(k, lam) for k in K_GRID for lam in LAM_GRID]
+    top = []  # (score, config, out-of-fold z-space predictions), best first
+
+    def push(s, cfg, P):
+        if len(top) < TOPN or s > top[-1][0]:
+            top.append((s, cfg, P.copy()))
+            top.sort(key=lambda x: -x[0])
+            del top[TOPN:]
+
+    def evaluate(kernels, r, t, best, best_s, tag):
+        oof_proj = {key: np.zeros_like(Z) for key in proj_keys}
         oof_delta = {w: np.zeros_like(Z) for w in w2_grid}
         for f, (tr, va) in enumerate(splits):
             K, Kva = kernels[f]
-            Zin, _, _ = _prep_targets(y_train.iloc[tr], r)
+            Zin, _, _ = _prep_targets(y_train.iloc[tr], r, t)
             P_tr, P_va, mu = _kridge(K, Kva, Zin, ALPHA)
-            proj = _project(P_tr, P_va, mu, K_GRID)
-            for k in K_GRID:
-                oof_proj[k][va] = proj[k]
+            proj = _project(P_tr, P_va, mu, K_GRID, LAM_GRID)
+            for key in proj_keys:
+                oof_proj[key][va] = proj[key]
             deltas = _target_deltas(K, Kva, Ttr[tr], Ttr[va], Zin, mu, P_va, idx_list, ALPHA, w2_grid)
             for w in w2_grid:
                 oof_delta[w][va] = deltas[w]
-        for k in K_GRID:
+        for key in proj_keys:
             for w in w2_grid:
-                s = _mean_pearson(oof_proj[k] + oof_delta[w], Yobs)
-                if s > best_s:
-                    best_s, best = s, tag + (k, w)
+                base = oof_proj[key] + oof_delta[w]
+                sm = base @ WnbT if any_nb else base
+                for rho in rho_grid:
+                    P = base if rho == 0 else (1.0 - rho) * base + rho * sm
+                    s = _mean_pearson(P, Yobs)
+                    cfg = tag + key + (w, rho)
+                    push(s, cfg, P)
+                    if s > best_s:
+                        best_s, best = s, cfg
         return best, best_s
 
-    # stage 1: gamma, eta, k, w2 with zero-filled missing targets
-    best, best_s = (g_grid[0], ETA_GRID[0], 0, K_GRID[0], 0.0), -np.inf
+    # stage 1: gamma, eta, k, lam, w2, rho with zero-filled missing targets
+    best, best_s = (g_grid[0], ETA_GRID[0], 0, "z", K_GRID[0], 0.0, 0.0, 0.0), -np.inf
     for g in g_grid:
         for eta in ETA_GRID:
-            best, best_s = evaluate(fold_kernels(g, eta), 0, best, best_s, (g, eta, 0))
+            best, best_s = evaluate(fold_kernels(g, eta), 0, "z", best, best_s, (g, eta, 0, "z"))
 
     # stage 2: low-rank imputation of missing training AUCs at best (gamma, eta)
+    g0, e0 = best[0], best[1]
+    kernels = fold_kernels(g0, e0)
     if has_missing:
-        g0, e0 = best[0], best[1]
-        kernels = fold_kernels(g0, e0)
         for r in R_GRID:
-            best, best_s = evaluate(kernels, r, best, best_s, (g0, e0, r))
-    best_g, best_eta, best_r, best_k, best_w = best
+            best, best_s = evaluate(kernels, r, "z", best, best_s, (g0, e0, r, "z"))
 
-    Xtr, Xte = build(best_g), build_te(best_g)
-    K, Kte = _lin_kernel(Xtr, Xte)
-    if best_eta > 0:
-        lin_trace = float(((Xtr - Xtr.mean(0)) ** 2).sum())
-        rscale = lin_trace / r_trace
-        Rc, Rcte = _center_kernel(R_all, R_te)
-        K = K + best_eta * rscale * Rc
-        Kte = Kte + best_eta * rscale * Rcte
-    Zfit, _, _ = _prep_targets(y_train, best_r)
-    P_tr, P_te, mu = _kridge(K, Kte, Zfit, ALPHA)
-    Pz = _project(P_tr, P_te, mu, [best_k])[best_k]
-    if best_w > 0:
-        Pz = Pz + _target_deltas(K, Kte, Ttr, Tte, Zfit, mu, P_te, idx_list, ALPHA, [best_w])[best_w]
+    # stage 3: robust target transform at best (gamma, eta, r)
+    r0 = best[2]
+    for t in T_GRID:
+        best, best_s = evaluate(kernels, r0, t, best, best_s, (g0, e0, r0, t))
+    del kernels
+
+    # stage 4: number of top configurations to average (M=1 is the single best)
+    configs = [best]
+    if top:
+        best_m_s = -np.inf
+        for M in M_GRID:
+            if M > len(top):
+                break
+            s = _mean_pearson(np.mean([e[2] for e in top[:M]], axis=0), Yobs)
+            if s > best_m_s + 1e-12:
+                best_m_s, configs = s, [e[1] for e in top[:M]]
+    top.clear()
+
+    # final refit of each selected configuration on the full training fold
+    kcache, zcache = {}, {}
+
+    def full_kernel(g, eta):
+        if (g, eta) not in kcache:
+            Xtr, Xte = build(g), build_te(g)
+            K, Kte = _lin_kernel(Xtr, Xte)
+            if eta > 0:
+                lin_trace = float(((Xtr - Xtr.mean(0)) ** 2).sum())
+                rscale = lin_trace / r_trace
+                Rc, Rcte = _center_kernel(R_all, R_te)
+                K = K + eta * rscale * Rc
+                Kte = Kte + eta * rscale * Rcte
+            kcache[(g, eta)] = (K, Kte)
+        return kcache[(g, eta)]
+
+    preds = []
+    for cfg in configs:
+        g, eta, r, t, k, lam, w, rho = cfg
+        K, Kte = full_kernel(g, eta)
+        if (r, t) not in zcache:
+            zcache[(r, t)] = _prep_targets(y_train, r, t)[0]
+        Zfit = zcache[(r, t)]
+        P_tr, P_te, mu = _kridge(K, Kte, Zfit, ALPHA)
+        Pz = _project(P_tr, P_te, mu, [k], [lam])[(k, lam)]
+        if w > 0:
+            Pz = Pz + _target_deltas(K, Kte, Ttr, Tte, Zfit, mu, P_te, idx_list, ALPHA, [w])[w]
+        if rho > 0:
+            Pz = (1.0 - rho) * Pz + rho * (Pz @ WnbT)
+        preds.append(Pz)
+    Pz = np.mean(preds, axis=0)
     return Pz * s_all + m_all

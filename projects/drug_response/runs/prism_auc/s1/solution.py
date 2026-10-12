@@ -1,14 +1,19 @@
 """Top-5,000 most variable genes, standardized; kernel ridge for all drugs in dual form with
 a blended kernel K = (1-v)*linear + v*s*centered-RBF (s matches traces), plus per-drug drug-target-gene
 features penalised less (weight w on the target-gene kernel). Each drug is fitted only on the lines where
-it was measured (no imputation). Post-hoc sharing: each drug's prediction is augmented with b x the
+it was measured (no imputation).
+Sparse per-drug biomarker model: for each drug, the top-m genes (out of the 10,000 most variable) by
+|correlation| with its training AUCs are selected (training lines only) and a small ridge is fitted on them;
+optionally bagged (selection + ridge repeated on row subsamples and averaged) to stabilise the noisy
+selection. Its prediction is blended in as (1-lam)*KRR + lam*sparse (lam=0 == pure kernel ridge).
+Post-hoc sharing: each drug's prediction is augmented with b x the
 mean standardized prediction of drugs sharing an MOA label, plus c x the correlation-weighted mean
 standardized prediction of its top-k most response-correlated drugs (correlations from training labels
 only), both rescaled to the drug's AUC sd.
 Optional robust target transformation: training AUCs are winsorized per drug at median +/- k*1.4826*MAD
 (training lines only) before fitting / sharing statistics; inner-CV scoring uses raw AUCs.
-(k, alpha, v, w, b, c) chosen jointly by grouped inner CV on the training fold (b=c=0 == no sharing,
-k=None == no clipping)."""
+(k, alpha, v, w, lam, bag, b, c) chosen jointly by grouped inner CV on the training fold (b=c=0 == no
+sharing, k=None == no clipping, bag=0 == single sparse fit)."""
 import re
 import numpy as np
 import pandas as pd
@@ -22,7 +27,13 @@ V_GRID = [0.0, 0.5, 0.9]
 B_GRID = [0.0, 0.25, 0.5, 1.0]
 C_GRID = [0.0, 0.25, 0.5, 1.0]
 K_GRID = [None, 2.5]
+L_GRID = [0.0, 0.2, 0.4]
 K_NBR = 10
+SP_GENES = 10000
+SP_M = 50
+SP_ALPHA = 1.0
+BAG_N = 8
+BAG_FRAC = 0.8
 
 
 def _aligned_drugs(ctx, drug_ids):
@@ -142,6 +153,48 @@ def _ystats(Ya):
     return obs, my, sdy
 
 
+def _sparse_predict(Xa, Ya, Xb, m=SP_M, alpha=SP_ALPHA):
+    """Per-drug ridge on the top-m genes by |corr| with the drug's observed (training) AUCs."""
+    obs, my, _ = _ystats(Ya)
+    Yc = np.where(obs, Ya - my, 0.0)
+    mx = Xa.mean(0)
+    sx = Xa.std(0)
+    sx[sx < 1e-8] = 1.0
+    Xa_ = (Xa - mx) / sx
+    Xb_ = (Xb - mx) / sx
+    S = np.abs(Xa_.T @ Yc)
+    m = min(m, S.shape[0])
+    top = np.argpartition(-S, m - 1, axis=0)[:m]
+    P = np.tile(my, (Xb.shape[0], 1))
+    for j in range(Ya.shape[1]):
+        o = obs[:, j]
+        no = int(o.sum())
+        if no < 5:
+            continue
+        idx = top[:, j]
+        A = Xa_[np.ix_(o, idx)]
+        ac = A.mean(0)
+        A = A - ac
+        yj = Yc[o, j]
+        beta = _psolve(A.T @ A + alpha * no * np.eye(len(idx)), A.T @ yj)
+        P[:, j] = my[j] + (Xb_[:, idx] - ac) @ beta
+    return P
+
+
+def _sparse_bagged(Xa, Ya, Xb, n_bag=BAG_N, frac=BAG_FRAC, seed=0):
+    """Average of sparse per-drug models refitted (selection + ridge) on row subsamples."""
+    rng = np.random.RandomState(seed)
+    n = Xa.shape[0]
+    k = max(10, int(round(frac * n)))
+    if k >= n:
+        return _sparse_predict(Xa, Ya, Xb)
+    P = np.zeros((Xb.shape[0], Ya.shape[1]))
+    for _ in range(n_bag):
+        idx = np.sort(rng.choice(n, k, replace=False))
+        P += _sparse_predict(Xa[idx], Ya[idx], Xb)
+    return P / n_bag
+
+
 def _predict_all(Xa, Ra, Ta, Ya, Xb, Rb, Tb, tlist, combos):
     """Dual kernel ridge with intercept; Ra/Rb = raw RBF kernels (a x a, b x a).
     Ya may contain NaN: each drug is fitted on its observed lines only.
@@ -218,12 +271,18 @@ def _sqdist(A, B):
 
 
 def fit_predict(F_train, y_train, F_test, ctx):
-    genes = F_train.var().sort_values(ascending=False).index[:5000]
+    gvar = F_train.var().sort_values(ascending=False)
+    genes = gvar.index[:5000]
     mu = F_train[genes].values.mean(0)
     sd = F_train[genes].values.std(0)
     sd[sd < 1e-8] = 1.0
     Xtr = (F_train[genes].values - mu) / sd
     Xte = (F_test[genes].values - mu) / sd
+
+    # broader gene pool for the sparse per-drug biomarker model
+    sgenes = gvar.index[:SP_GENES]
+    Str = F_train[sgenes].values.astype(float)
+    Ste = F_test[sgenes].values.astype(float)
 
     # RBF kernel on standardized genes, bandwidth = median pairwise squared distance (label-free)
     D2tr = _sqdist(Xtr, Xtr)
@@ -259,10 +318,10 @@ def fit_predict(F_train, y_train, F_test, ctx):
     w_grid = W_GRID if has_t else [0.0]
     combos = [(a, v, w) for a in A_GRID for v in V_GRID for w in w_grid]
 
-    best_k, best, best_b, best_c = None, (ALPHA_DEFAULT, 0.0, 0.0), 0.0, 0.0
-    if len(combos) > 1 or len(b_grid) > 1 or len(c_grid) > 1 or len(K_GRID) > 1:
-        groups = np.asarray(ctx.get("groups_train", np.arange(len(F_train))))
-        n_splits = min(3, len(np.unique(groups)))
+    best_k, best, best_l, best_g, best_b, best_c = None, (ALPHA_DEFAULT, 0.0, 0.0), 0.0, 0, 0.0, 0.0
+    groups = np.asarray(ctx.get("groups_train", np.arange(len(F_train))))
+    n_splits = min(3, len(np.unique(groups)))
+    if n_splits >= 2:
         splits = list(GroupKFold(n_splits=n_splits).split(Xtr, groups=groups))
         scores = {}
         for kk in K_GRID:
@@ -273,21 +332,29 @@ def fit_predict(F_train, y_train, F_test, ctx):
                 N2_f = _corr_matrix(Yt)
                 res = _predict_all(Xtr[tr], Rtr[np.ix_(tr, tr)], Ttr[tr], Yt,
                                    Xtr[va], Rtr[np.ix_(va, tr)], Ttr[va], tlist, combos)
-                folds.append((va, res, my_f, sd_f, N2_f))
+                Sps = (_sparse_predict(Str[tr], Yt, Str[va]), _sparse_bagged(Str[tr], Yt, Str[va]))
+                folds.append((va, res, Sps, my_f, sd_f, N2_f))
             for cb in combos:
-                for b in b_grid:
-                    for c in c_grid:
-                        P = np.zeros_like(Yobs)
-                        for va, res, my_f, sd_f, N2_f in folds:
-                            P[va] = _share(res[cb], my_f, sd_f, N, b, N2_f, c)
-                        scores[(kk, cb, b, c)] = _mean_pearson(P, Yobs)
-        best_k, best, best_b, best_c = max(
+                for lam in L_GRID:
+                    for g in ([0] if lam == 0 else [0, 1]):
+                        for b in b_grid:
+                            for c in c_grid:
+                                P = np.zeros_like(Yobs)
+                                for va, res, Sps, my_f, sd_f, N2_f in folds:
+                                    base = res[cb] if lam == 0 else (1.0 - lam) * res[cb] + lam * Sps[g]
+                                    P[va] = _share(base, my_f, sd_f, N, b, N2_f, c)
+                                scores[(kk, cb, lam, g, b, c)] = _mean_pearson(P, Yobs)
+        best_k, best, best_l, best_g, best_b, best_c = max(
             scores.keys(),
             key=lambda k: (scores[k], k[0] is None, -abs(np.log(k[1][0] / ALPHA_DEFAULT)),
-                           -k[1][1], -k[1][2], -k[2], -k[3]))
+                           -k[1][1], -k[1][2], -k[2], -k[3], -k[4], -k[5]))
 
     Yfit = _winsor(Yobs, best_k)
     res = _predict_all(Xtr, Rtr, Ttr, Yfit, Xte, Rte, Tte, tlist, [best])
+    P = res[best]
+    if best_l > 0:
+        Sp = _sparse_bagged(Str, Yfit, Ste) if best_g == 1 else _sparse_predict(Str, Yfit, Ste)
+        P = (1.0 - best_l) * P + best_l * Sp
     _, my_all, sd_all = _ystats(Yfit)
     N2 = _corr_matrix(Yfit) if best_c != 0 else None
-    return _share(res[best], my_all, sd_all, N, best_b, N2, best_c)
+    return _share(P, my_all, sd_all, N, best_b, N2, best_c)
