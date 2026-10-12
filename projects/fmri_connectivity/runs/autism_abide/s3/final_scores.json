@@ -1,0 +1,21 @@
+{
+  "project": "fmri_connectivity",
+  "task": "autism_abide",
+  "seed": 3,
+  "dev_seed": 0.733136,
+  "dev_champion": 0.790349,
+  "eval_seed": 0.7775791946101307,
+  "eval_champion": 0.7720796596600132,
+  "dev_gain": 0.05721299999999996,
+  "eval_gain": -0.005499534950117457,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.031276965129261224,
+    "ci95": [
+      -0.06696837500391886,
+      0.054522565344088204
+    ],
+    "p_one_sided": 0.564
+  },
+  "external": {}
+}

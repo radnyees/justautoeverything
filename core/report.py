@@ -30,7 +30,7 @@ INK, MUT, GRID, REF = "#141922", "#5B6675", "#EAEEF4", "#7C8797"
 PALETTE = ["#2563C9", "#D9860F", "#1F9D55", "#B5418E", "#7A5AF8", "#0E9AA7"]
 PROJECT_ORDER = ["eeg_psych", "fmri_connectivity", "neonatal_seizure", "microbiome", "proteomics_ad",
                  "drug_response"]
-LABEL = {"eeg_psych": "Resting EEG", "fmri_connectivity": "fMRI connectivity",
+LABEL = {"eeg_psych": "Scalp EEG", "fmri_connectivity": "fMRI connectivity",
          "neonatal_seizure": "Neonatal seizures", "microbiome": "Gut microbiome",
          "proteomics_ad": "Proteomics (AD)", "drug_response": "Drug response"}
 

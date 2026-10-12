@@ -1,0 +1,36 @@
+{
+  "project": "eeg_psych",
+  "task": "abnormal_tuab",
+  "seed": 1,
+  "dev_seed": 0.869273,
+  "dev_champion": 0.937742,
+  "eval_seed": 0.8398996045025857,
+  "eval_champion": 0.9306442889497346,
+  "dev_gain": 0.068469,
+  "eval_gain": 0.0907446844471489,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.012370465044099617,
+    "ci95": [
+      0.06724242188578927,
+      0.11563152147826025
+    ],
+    "p_one_sided": 0.0
+  },
+  "external": {
+    "tuab_official_eval": {
+      "seed": 0.8665608465608465,
+      "champion": 0.9303174603174603,
+      "gain": 0.06375661375661379,
+      "bootstrap": {
+        "n_boot": 2000,
+        "boot_se": 0.016090169447952548,
+        "ci95": [
+          0.03404475198100821,
+          0.09617287986320654
+        ],
+        "p_one_sided": 0.0
+      }
+    }
+  }
+}
