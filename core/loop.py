@@ -169,14 +169,15 @@ def main():
     ap.add_argument("--effort", default="high", choices=["low", "medium", "high", "xhigh", "max"])
     ap.add_argument("--time-limit", type=int, default=1500, help="seconds per candidate")
     ap.add_argument("--llm-timeout", type=int, default=1200)
-    ap.add_argument("--llm-retries", type=int, default=3)
+    ap.add_argument("--llm-retries", type=int, default=6)
     args = ap.parse_args()
 
     cfg = project_cfg(args.project)
     tcfg = cfg["tasks"][args.task]
     size = tcfg.get("size", "m")
     pdir = ROOT / "projects" / args.project
-    run_dir = pdir / "runs" / args.task / f"s{args.seed}"
+    runs_root = Path(os.environ.get("JAE_RUNS_ROOT", ROOT / "projects"))   # /runs on Modal
+    run_dir = runs_root / args.project / "runs" / args.task / f"s{args.seed}"
     run_dir.mkdir(parents=True, exist_ok=True)
     solution, candidate = run_dir / "solution.py", run_dir / "candidate.py"
     history_path = run_dir / "history.jsonl"
@@ -184,7 +185,7 @@ def main():
         seed_file = pdir / "seeds" / f"{args.task}.py"
         seed_file = seed_file if seed_file.exists() else pdir / "seeds" / "default.py"
         solution.write_text(seed_file.read_text())
-        print(f"[loop] seeded {solution.relative_to(ROOT)} from {seed_file.name}")
+        print(f"[loop] seeded {solution} from {seed_file.name}")
 
     brief = (ROOT / "core" / "brief.md").read_text()
     program = (pdir / "program.md").read_text()
@@ -226,7 +227,7 @@ def main():
                 break
             except (RuntimeError, subprocess.TimeoutExpired) as e:
                 print(f"[loop] round {rnd}: LLM call failed ({attempt}): {str(e)[:200]}", flush=True)
-                time.sleep(30)
+                time.sleep(60 * attempt)                     # back off (rate limits, network)
         if reply is None:
             print(f"[loop] round {rnd}: LLM unreachable; skipping (not counted).", flush=True)
             continue
@@ -261,7 +262,7 @@ def main():
         with open(history_path, "a") as f:
             f.write(json.dumps(rec) + "\n")
 
-    print(f"[loop] done. best Dev = {best:.6f} ({solution.relative_to(ROOT)})", flush=True)
+    print(f"[loop] done. best Dev = {best:.6f} ({solution})", flush=True)
 
 
 if __name__ == "__main__":

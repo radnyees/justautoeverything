@@ -1,9 +1,10 @@
 """Ledoit-Wolf shrinkage covariance on CC200 (z-scored series) -> Riemannian re-centering per
 site (each site's covariances whitened by that site's geometric mean, label-free) -> tangent space
 at identity, upper triangle -> per-site feature-wise variance standardization (ComBat-style scale
-correction, shrunk toward pooled within-site variance) -> L2 logistic regression with C chosen by
-grouped inner CV. Stacked with demographic covariates (sex, age, site) via inner grouped CV
-out-of-fold scores."""
+correction, shrunk toward pooled within-site variance) -> per-edge split-half reliability weighting
+(label-free test-retest prior: features scaled by sqrt of Spearman-Brown reliability) -> L2 logistic
+regression with C chosen by grouped inner CV. Stacked with demographic covariates (sex, age, site)
+via inner grouped CV out-of-fold scores."""
 import numpy as np
 import pandas as pd
 from sklearn.covariance import ledoit_wolf
@@ -14,8 +15,10 @@ from sklearn.preprocessing import StandardScaler
 
 MIN_SITE = 10
 VAR_PRIOR = 10.0  # pseudo-count shrinking per-site feature variance toward pooled within-site variance
-C_GRID = [1e-4, 3e-4, 1e-3, 3e-3, 1e-2]
+C_GRID = [1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 3e-2]
 C_DEFAULT = 1e-3
+MIN_HALF = 20  # minimum timepoints per half for split-half reliability
+REL_FLOOR = 0.01
 
 
 def _sym_fn(m, fn):
@@ -95,20 +98,46 @@ def _site_scale(F, sites):
     return F
 
 
+def _lw_cov(x):
+    x = np.asarray(x, dtype=np.float64)
+    x = x - x.mean(0)
+    sd = x.std(0)
+    sd[sd < 1e-8] = 1.0
+    x = x / sd
+    c, _ = ledoit_wolf(x, assume_centered=True)
+    c = (c + c.T) / 2
+    c += 1e-6 * np.eye(c.shape[0])
+    return c
+
+
+def _center_by_site(H, sites):
+    if sites is None:
+        return H - H.mean(0)
+    H = H.copy()
+    rest = np.ones(len(H), dtype=bool)
+    for s in np.unique(sites):
+        idx = np.where(sites == s)[0]
+        if len(idx) >= MIN_SITE:
+            H[idx] -= H[idx].mean(0)
+            rest[idx] = False
+    if rest.any():
+        H[rest] -= H[rest].mean(0)
+    return H
+
+
 def featurize(items, ctx):
     strategy = "filt_noglobal" if "filt_noglobal" in ctx["strategies"] else ctx["strategies"][0]
     ts = ctx["load_timeseries"](items, "cc200", strategy)
-    covs = []
+    covs, halves = [], []
     for x in ts:
         x = np.asarray(x, dtype=np.float64)
-        x = x - x.mean(0)
-        sd = x.std(0)
-        sd[sd < 1e-8] = 1.0
-        x = x / sd
-        c, _ = ledoit_wolf(x, assume_centered=True)
-        c = (c + c.T) / 2
-        c += 1e-6 * np.eye(c.shape[0])
-        covs.append(c)
+        covs.append(_lw_cov(x))
+        T = x.shape[0]
+        if T >= 2 * MIN_HALF:
+            h = T // 2
+            halves.append((_lw_cov(x[:h]), _lw_cov(x[h:])))
+        else:
+            halves.append(None)
     covs = np.asarray(covs)
 
     G_all = _geometric_mean(covs)
@@ -117,6 +146,7 @@ def featurize(items, ctx):
 
     sites = _item_sites(items, ctx)
     if sites is not None:
+        sites = np.asarray(sites)
         for s in np.unique(sites):
             idx = np.where(sites == s)[0]
             if len(idx) < MIN_SITE:
@@ -130,19 +160,41 @@ def featurize(items, ctx):
     iu = np.triu_indices(n, k=0)
     wts = np.where(iu[0] == iu[1], 1.0, np.sqrt(2.0))
     feats = []
-    for c, W in zip(covs, whiten):
+    H1, H2, hok = [], [], []
+    for i, (c, W) in enumerate(zip(covs, whiten)):
         t = _sym_fn(W @ c @ W, np.log)
         feats.append(t[iu] * wts)
+        if halves[i] is not None:
+            a, b = halves[i]
+            H1.append((_sym_fn(W @ a @ W, np.log)[iu] * wts).astype(np.float32))
+            H2.append((_sym_fn(W @ b @ W, np.log)[iu] * wts).astype(np.float32))
+            hok.append(i)
     F = np.asarray(feats, dtype=np.float64)
     F = np.nan_to_num(F, nan=0.0, posinf=0.0, neginf=0.0)
     if sites is not None:
-        F = _site_scale(F, np.asarray(sites))
+        F = _site_scale(F, sites)
+
+    # Label-free split-half reliability per edge -> feature weights sqrt(Spearman-Brown reliability)
+    if len(hok) >= 30:
+        hs = sites[np.asarray(hok)] if sites is not None else None
+        A = _center_by_site(np.nan_to_num(np.asarray(H1, dtype=np.float64)), hs)
+        B = _center_by_site(np.nan_to_num(np.asarray(H2, dtype=np.float64)), hs)
+        num = (A * B).sum(0)
+        den = np.sqrt((A * A).sum(0) * (B * B).sum(0))
+        r = np.where(den > 1e-12, num / np.maximum(den, 1e-12), 0.0)
+        r = np.clip(r, 0.0, 1.0)
+        r_sb = 2 * r / (1 + r)
+        w = np.sqrt(np.clip(r_sb, REL_FLOOR, 1.0))
+        F = F * w[None, :]
+        del A, B
+
     F = F.astype(np.float32)
     return np.nan_to_num(F, nan=0.0, posinf=0.0, neginf=0.0)
 
 
 def _conn_fit_score(Xtr, ytr, Xte, C):
-    sc = StandardScaler().fit(Xtr)
+    # Center only: features are already per-site variance standardized and reliability-weighted.
+    sc = StandardScaler(with_std=False).fit(Xtr)
     clf = LogisticRegression(C=C, max_iter=5000).fit(sc.transform(Xtr), ytr)
     return clf.decision_function(sc.transform(Xte))
 

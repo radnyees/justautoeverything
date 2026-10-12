@@ -6,7 +6,8 @@ plus a dynamic-connectivity block (per-ROI sliding-window temporal variability o
 SD of windowed node strength, pooled across atlases), plus a network-summary block (within/between-module mean
 Fisher-z connectivity for label-free data-driven modules at two scales, k=7 and k=17, pooled across atlases),
 plus a whole-brain block (global-signal amplitude/coupling/autocorrelation, DVARS residual-motion proxies and
-effective dimensionality of the correlation spectrum, pooled across atlases).
+effective dimensionality of the correlation spectrum, pooled across atlases), plus a scale-free dynamics block
+(per-ROI short- and long-scale detrended fluctuation analysis exponents, pooled across atlases).
 Per-site feature standardization (label-free, transductive) plus lightly-penalized site one-hot, sex one-hot
 and age covariate columns, moderately-penalized site x sex interaction columns (site-specific recruitment),
 L2 logistic regression per block, decision scores averaged across blocks."""
@@ -17,7 +18,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
 _ATLASES = ["cc200", "aal", "ho"]
-_MAX_BLOCKS = 8
+_MAX_BLOCKS = 9
 _WIN = 30
 _STEP = 3
 _MODULE_K = (7, 17)
@@ -25,6 +26,8 @@ _N_GLOBAL = 12
 _COV_SCALE = 30.0
 _INTER_SCALE = 5.0
 _INTER_MIN = 5
+_DFA_SCALES = (4, 5, 6, 8, 11, 16, 22, 32, 45, 64)
+_DFA_SPLIT = 8
 
 
 def _spd_fn(C, f):
@@ -87,6 +90,51 @@ def _ts_feats(ts):
                 ac2[good] = np.mean(z[2:] * z[:-2], axis=0)
         rows.append(np.concatenate([logsd, ac1, ac2]))
     # impute out-of-FOV ROIs with the per-feature median (label-free)
+    return _impute_median(rows)
+
+
+def _dfa_feats(ts):
+    """Per-ROI detrended fluctuation analysis: scaling exponent of the RMS fluctuation of the integrated,
+    linearly detrended signal over short (4-8 TR) and long (8 TR .. T/4) window sizes (Hurst-like
+    long-range temporal correlation)."""
+    rows = []
+    for x in ts:
+        x = np.nan_to_num(np.asarray(x, dtype=np.float64))
+        x = x - x.mean(axis=0)
+        sd = x.std(axis=0)
+        good = sd > 1e-8
+        n_t, n_roi = x.shape
+        a_s = np.full(n_roi, np.nan)
+        a_l = np.full(n_roi, np.nan)
+        scales = [n for n in _DFA_SCALES if n <= n_t // 4]
+        if good.any() and len(scales) >= 4:
+            z = x[:, good] / sd[good]
+            y = np.cumsum(z, axis=0)
+            logF = []
+            for n in scales:
+                ns = n_t // n
+                Y = y[:ns * n].reshape(ns, n, -1)
+                tc = np.arange(n, dtype=np.float64) - (n - 1) / 2.0
+                Yc = Y - Y.mean(axis=1, keepdims=True)
+                b = np.einsum("t,stk->sk", tc, Yc) / np.sum(tc ** 2)
+                res = Yc - tc[None, :, None] * b[:, None, :]
+                F = np.sqrt(np.mean(res ** 2, axis=(0, 1)))
+                logF.append(np.log(F + 1e-12))
+            L = np.asarray(logF)  # (S, ng)
+            ln = np.log(np.asarray(scales, dtype=np.float64))
+
+            def _slope(mask):
+                lx = ln[mask] - ln[mask].mean()
+                Ly = L[mask] - L[mask].mean(axis=0)
+                return (lx @ Ly) / np.sum(lx ** 2)
+
+            short = np.asarray(scales) <= _DFA_SPLIT
+            long_ = np.asarray(scales) >= _DFA_SPLIT
+            if short.sum() >= 2:
+                a_s[good] = _slope(short)
+            if long_.sum() >= 2:
+                a_l[good] = _slope(long_)
+        rows.append(np.concatenate([a_s, a_l]))
     return _impute_median(rows)
 
 
@@ -270,6 +318,7 @@ def featurize(items, ctx):
     dyn_blocks = []
     mod_blocks = []
     glob_blocks = []
+    dfa_blocks = []
     for a in atlases:
         ts = ctx["load_timeseries"](items, a, strategy)
         blocks.append(_tangent_feats(ts))
@@ -278,12 +327,14 @@ def featurize(items, ctx):
         dyn_blocks.append(_dynamic_feats(ts))
         mod_blocks.append(_module_feats(ts))
         glob_blocks.append(_global_feats(ts))
+        dfa_blocks.append(_dfa_feats(ts))
         del ts
     blocks.append(np.hstack(ts_blocks))
     blocks.append(np.hstack(st_blocks))
     blocks.append(np.hstack(dyn_blocks))
     blocks.append(np.hstack(mod_blocks))
     blocks.append(np.hstack(glob_blocks))
+    blocks.append(np.hstack(dfa_blocks))
     n = len(items)
     # header: block sizes (constant per item) so fit_predict can split the blocks
     header = np.zeros((n, _MAX_BLOCKS), dtype=np.float32)

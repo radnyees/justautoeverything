@@ -1,21 +1,42 @@
-"""Top-5,000 most variable genes, standardized, ridge (alpha=5000) for all drugs, solved in dual form,
-plus per-drug drug-target-gene features penalised less (weight w on the target-gene kernel),
-w chosen by grouped inner CV on the training fold (w=0 == plain shared ridge)."""
+"""Top-5,000 most variable genes, standardized; kernel ridge for all drugs in dual form with
+a blended kernel K = (1-v)*linear + v*s*centered-RBF (s matches traces), plus per-drug drug-target-gene
+features penalised less (weight w on the target-gene kernel). Each drug is fitted only on the lines where
+it was measured (no imputation). Post-hoc sharing: each drug's prediction is augmented with b x the
+mean standardized prediction of drugs sharing an MOA label, plus c x the correlation-weighted mean
+standardized prediction of its top-k most response-correlated drugs (correlations from training labels
+only), both rescaled to the drug's AUC sd.
+Optional robust target transformation: training AUCs are winsorized per drug at median +/- k*1.4826*MAD
+(training lines only) before fitting / sharing statistics; inner-CV scoring uses raw AUCs.
+(k, alpha, v, w, b, c) chosen jointly by grouped inner CV on the training fold (b=c=0 == no sharing,
+k=None == no clipping)."""
 import re
 import numpy as np
+import pandas as pd
+from scipy.linalg import solve as _solve
 from sklearn.model_selection import GroupKFold
 
-ALPHA = 5000.0
+ALPHA_DEFAULT = 5000.0
+A_GRID = [2000.0, 5000.0, 12500.0]
 W_GRID = [0.0, 30.0, 300.0, 3000.0]
+V_GRID = [0.0, 0.5, 0.9]
+B_GRID = [0.0, 0.25, 0.5, 1.0]
+C_GRID = [0.0, 0.25, 0.5, 1.0]
+K_GRID = [None, 2.5]
+K_NBR = 10
 
 
-def _drug_targets(ctx, drug_ids, gene_index):
+def _aligned_drugs(ctx, drug_ids):
     d = ctx["drugs"]
     try:
         if "broad_id" in d.columns and set(drug_ids) <= set(d["broad_id"]):
             d = d.drop_duplicates("broad_id").set_index("broad_id").loc[list(drug_ids)].reset_index()
     except Exception:
         pass
+    return d
+
+
+def _drug_targets(ctx, drug_ids, gene_index):
+    d = _aligned_drugs(ctx, drug_ids)
     gpos = {g.upper(): i for i, g in enumerate(gene_index)}
     out = []
     for t in d["target"].tolist()[:len(drug_ids)]:
@@ -29,44 +50,171 @@ def _drug_targets(ctx, drug_ids, gene_index):
     return out
 
 
-def _predict_all(Xa, Ta, Ya, Xb, Tb, tlist, w_grid):
-    """Dual ridge with intercept; returns {w: predictions (n_b, n_drugs)}."""
-    mx, mt, my = Xa.mean(0), Ta.mean(0), Ya.mean(0)
+def _moa_matrix(ctx, drug_ids):
+    """N[k, j] = 1/|nbrs(j)| if drug k shares an MOA label with drug j (k != j), else 0."""
+    nd = len(drug_ids)
+    N = np.zeros((nd, nd))
+    try:
+        d = _aligned_drugs(ctx, drug_ids)
+        moas = d["moa"].tolist()[:nd] if "moa" in d.columns else []
+    except Exception:
+        moas = []
+    labs = []
+    for m in moas:
+        if isinstance(m, str):
+            labs.append({s.strip().lower() for s in re.split(r"[,;|]+", m) if s.strip()})
+        else:
+            labs.append(set())
+    while len(labs) < nd:
+        labs.append(set())
+    for j in range(nd):
+        nb = [k for k in range(nd) if k != j and labs[j] and (labs[j] & labs[k])]
+        if nb:
+            N[nb, j] = 1.0 / len(nb)
+    return N
+
+
+def _corr_matrix(Y, k=K_NBR):
+    """N2[i, j] = r_ij / sum(r) over the top-k positively correlated drugs i of drug j (from labels)."""
+    nd = Y.shape[1]
+    C = pd.DataFrame(Y).corr(min_periods=20).values
+    C = np.where(np.isnan(C), 0.0, C)
+    np.fill_diagonal(C, 0.0)
+    C = np.maximum(C, 0.0)
+    N2 = np.zeros((nd, nd))
+    for j in range(nd):
+        idx = np.argsort(-C[:, j])[:k]
+        idx = idx[C[idx, j] > 0]
+        if len(idx):
+            N2[idx, j] = C[idx, j] / C[idx, j].sum()
+    return N2
+
+
+def _winsor(Y, k):
+    """Per-drug clip at median +/- k * robust sd (1.4826*MAD, fallback to sd); NaN preserved."""
+    if k is None:
+        return Y
+    with np.errstate(all="ignore"):
+        med = np.nanmedian(Y, axis=0)
+        mad = 1.4826 * np.nanmedian(np.abs(Y - med), axis=0)
+        sd = np.nanstd(Y, axis=0)
+    s = np.where(np.isfinite(mad) & (mad > 1e-8), mad, sd)
+    ok = np.isfinite(med) & np.isfinite(s) & (s > 1e-8)
+    lo = np.where(ok, med - k * s, -np.inf)
+    hi = np.where(ok, med + k * s, np.inf)
+    return np.clip(Y, lo, hi)
+
+
+def _share(P, my, sdy, N, b, N2=None, c=0.0):
+    if (b == 0 or not N.any()) and (c == 0 or N2 is None or not N2.any()):
+        return P
+    Z = (P - my) / sdy
+    out = P
+    if b != 0 and N.any():
+        out = out + b * (Z @ N) * sdy
+    if c != 0 and N2 is not None and N2.any():
+        out = out + c * (Z @ N2) * sdy
+    return out
+
+
+def _center_kernel(K, Kb):
+    cm = K.mean(0)
+    tot = K.mean()
+    Kc = K - cm[None, :] - cm[:, None] + tot
+    Kbc = Kb - Kb.mean(1)[:, None] - cm[None, :] + tot
+    return Kc, Kbc
+
+
+def _psolve(A, b):
+    try:
+        return _solve(A, b, assume_a="pos", check_finite=False)
+    except Exception:
+        return np.linalg.solve(A, b)
+
+
+def _ystats(Ya):
+    obs = ~np.isnan(Ya)
+    my = np.nanmean(np.where(obs, Ya, np.nan), axis=0) if obs.any() else np.zeros(Ya.shape[1])
+    gm = np.nanmean(Ya) if obs.any() else 0.0
+    my = np.where(np.isnan(my), gm, my)
+    sdy = np.nanstd(np.where(obs, Ya, np.nan), axis=0) if obs.any() else np.ones(Ya.shape[1])
+    sdy = np.where(np.isnan(sdy) | (sdy < 1e-8), 1.0, sdy)
+    return obs, my, sdy
+
+
+def _predict_all(Xa, Ra, Ta, Ya, Xb, Rb, Tb, tlist, combos):
+    """Dual kernel ridge with intercept; Ra/Rb = raw RBF kernels (a x a, b x a).
+    Ya may contain NaN: each drug is fitted on its observed lines only.
+    combos: list of (alpha, v, w). Returns {(alpha, v, w): predictions (n_b, n_drugs)}."""
+    obs, my, _ = _ystats(Ya)
+    Yc = np.where(obs, Ya - my, 0.0)
+    full = obs.all(0)
+    part = np.where(~full)[0]
+
+    mx, mt = Xa.mean(0), Ta.mean(0)
     Xa, Xb = Xa - mx, Xb - mx
     Ta, Tb = Ta - mt, Tb - mt
-    Yc = Ya - my
-    K0 = Xa @ Xa.T
-    K0b = Xb @ Xa.T
-    n = K0.shape[0]
-    Kreg = K0 + ALPHA * np.eye(n)
-    base = my + K0b @ np.linalg.solve(Kreg, Yc)
+    Klin = Xa @ Xa.T
+    Kblin = Xb @ Xa.T
+    Rc, Rbc = _center_kernel(Ra, Rb)
+    s = np.trace(Klin) / max(np.trace(Rc), 1e-12)
+    n = Klin.shape[0]
+    nb = Xb.shape[0]
     res = {}
-    for w in w_grid:
-        P = base.copy()
-        if w > 0:
-            for j, cols in enumerate(tlist):
-                if not cols:
+    for v in sorted({c[1] for c in combos}):
+        K0 = (1.0 - v) * Klin + v * s * Rc
+        K0b = (1.0 - v) * Kblin + v * s * Rbc
+        for a in sorted({c[0] for c in combos if c[1] == v}):
+            Kreg = K0 + a * np.eye(n)
+            base = np.tile(my, (nb, 1))
+            if full.any():
+                base[:, full] = my[full] + K0b @ _psolve(Kreg, Yc[:, full])
+            for j in part:
+                o = obs[:, j]
+                if o.sum() < 3:
                     continue
-                A, B = Ta[:, cols], Tb[:, cols]
-                K = Kreg + w * (A @ A.T)
-                Kb = K0b + w * (B @ A.T)
-                P[:, j] = my[j] + Kb @ np.linalg.solve(K, Yc[:, j])
-        res[w] = P
+                base[:, j] = my[j] + K0b[:, o] @ _psolve(Kreg[np.ix_(o, o)], Yc[o, j])
+            for w in sorted({c[2] for c in combos if c[0] == a and c[1] == v}):
+                P = base.copy()
+                if w > 0:
+                    for j, cols in enumerate(tlist):
+                        if not cols:
+                            continue
+                        o = obs[:, j]
+                        if o.sum() < 3:
+                            continue
+                        A, B = Ta[o][:, cols], Tb[:, cols]
+                        K = Kreg[np.ix_(o, o)] + w * (A @ A.T)
+                        Kb = K0b[:, o] + w * (B @ A.T)
+                        P[:, j] = my[j] + Kb @ _psolve(K, Yc[o, j])
+                res[(a, v, w)] = P
     return res
 
 
 def _mean_pearson(P, Yobs):
-    rs = []
-    for j in range(Yobs.shape[1]):
-        m = ~np.isnan(Yobs[:, j])
-        if m.sum() < 3:
-            continue
-        p, y = P[m, j], Yobs[m, j]
-        if p.std() < 1e-12 or y.std() < 1e-12:
-            rs.append(0.0)
-            continue
-        rs.append(np.corrcoef(p, y)[0, 1])
-    return float(np.mean(rs)) if rs else 0.0
+    M = ~np.isnan(Yobs)
+    cnt = M.sum(0)
+    valid = cnt >= 3
+    if not valid.any():
+        return 0.0
+    c = np.maximum(cnt, 1)
+    mp = np.where(M, P, 0.0).sum(0) / c
+    my = np.where(M, Yobs, 0.0).sum(0) / c
+    dp = np.where(M, P - mp, 0.0)
+    dy = np.where(M, Yobs - my, 0.0)
+    num = (dp * dy).sum(0)
+    sp = np.sqrt((dp ** 2).sum(0))
+    sy = np.sqrt((dy ** 2).sum(0))
+    ok = (sp > 1e-12) & (sy > 1e-12)
+    r = np.where(ok, num / np.where(ok, sp * sy, 1.0), 0.0)
+    return float(np.mean(r[valid]))
+
+
+def _sqdist(A, B):
+    sa = (A ** 2).sum(1)
+    sb = (B ** 2).sum(1)
+    D = sa[:, None] + sb[None, :] - 2.0 * (A @ B.T)
+    return np.maximum(D, 0.0)
 
 
 def fit_predict(F_train, y_train, F_test, ctx):
@@ -76,6 +224,15 @@ def fit_predict(F_train, y_train, F_test, ctx):
     sd[sd < 1e-8] = 1.0
     Xtr = (F_train[genes].values - mu) / sd
     Xte = (F_test[genes].values - mu) / sd
+
+    # RBF kernel on standardized genes, bandwidth = median pairwise squared distance (label-free)
+    D2tr = _sqdist(Xtr, Xtr)
+    D2te = _sqdist(Xte, Xtr)
+    iu = np.triu_indices(len(Xtr), k=1)
+    med = np.median(D2tr[iu]) if len(iu[0]) else 1.0
+    gamma = 1.0 / max(med, 1e-12)
+    Rtr = np.exp(-gamma * D2tr)
+    Rte = np.exp(-gamma * D2te)
 
     drug_ids = list(y_train.columns)
     tl_all = _drug_targets(ctx, drug_ids, F_train.columns)
@@ -92,24 +249,45 @@ def fit_predict(F_train, y_train, F_test, ctx):
     Tte = ((Tall_te - tm) / np.where(keep, ts, 1.0))[:, keep]
     tlist = [[remap[c] for c in cols if c in remap] for cols in tl_all]
 
-    Yobs = y_train.values.astype(float)
-    Y = y_train.fillna(y_train.mean()).values
+    N = _moa_matrix(ctx, drug_ids)
+    b_grid = B_GRID if N.any() else [0.0]
+    c_grid = C_GRID
 
-    best_w = 0.0
-    if any(tlist) and Ttr.shape[1] > 0:
+    Yobs = y_train.values.astype(float)
+
+    has_t = any(tlist) and Ttr.shape[1] > 0
+    w_grid = W_GRID if has_t else [0.0]
+    combos = [(a, v, w) for a in A_GRID for v in V_GRID for w in w_grid]
+
+    best_k, best, best_b, best_c = None, (ALPHA_DEFAULT, 0.0, 0.0), 0.0, 0.0
+    if len(combos) > 1 or len(b_grid) > 1 or len(c_grid) > 1 or len(K_GRID) > 1:
         groups = np.asarray(ctx.get("groups_train", np.arange(len(F_train))))
         n_splits = min(3, len(np.unique(groups)))
-        oof = {w: np.zeros_like(Y) for w in W_GRID}
-        for tr, va in GroupKFold(n_splits=n_splits).split(Xtr, groups=groups):
-            Yi = Yobs[tr]
-            colmean = np.nanmean(Yi, axis=0)
-            colmean = np.where(np.isnan(colmean), np.nanmean(Yobs), colmean)
-            Yi = np.where(np.isnan(Yi), colmean, Yi)
-            res = _predict_all(Xtr[tr], Ttr[tr], Yi, Xtr[va], Ttr[va], tlist, W_GRID)
-            for w in W_GRID:
-                oof[w][va] = res[w]
-        scores = {w: _mean_pearson(oof[w], Yobs) for w in W_GRID}
-        best_w = max(W_GRID, key=lambda w: (scores[w], -w))
+        splits = list(GroupKFold(n_splits=n_splits).split(Xtr, groups=groups))
+        scores = {}
+        for kk in K_GRID:
+            folds = []
+            for tr, va in splits:
+                Yt = _winsor(Yobs[tr], kk)
+                _, my_f, sd_f = _ystats(Yt)
+                N2_f = _corr_matrix(Yt)
+                res = _predict_all(Xtr[tr], Rtr[np.ix_(tr, tr)], Ttr[tr], Yt,
+                                   Xtr[va], Rtr[np.ix_(va, tr)], Ttr[va], tlist, combos)
+                folds.append((va, res, my_f, sd_f, N2_f))
+            for cb in combos:
+                for b in b_grid:
+                    for c in c_grid:
+                        P = np.zeros_like(Yobs)
+                        for va, res, my_f, sd_f, N2_f in folds:
+                            P[va] = _share(res[cb], my_f, sd_f, N, b, N2_f, c)
+                        scores[(kk, cb, b, c)] = _mean_pearson(P, Yobs)
+        best_k, best, best_b, best_c = max(
+            scores.keys(),
+            key=lambda k: (scores[k], k[0] is None, -abs(np.log(k[1][0] / ALPHA_DEFAULT)),
+                           -k[1][1], -k[1][2], -k[2], -k[3]))
 
-    res = _predict_all(Xtr, Ttr, Y, Xte, Tte, tlist, [best_w])
-    return res[best_w]
+    Yfit = _winsor(Yobs, best_k)
+    res = _predict_all(Xtr, Rtr, Ttr, Yfit, Xte, Rte, Tte, tlist, [best])
+    _, my_all, sd_all = _ystats(Yfit)
+    N2 = _corr_matrix(Yfit) if best_c != 0 else None
+    return _share(res[best], my_all, sd_all, N, best_b, N2, best_c)

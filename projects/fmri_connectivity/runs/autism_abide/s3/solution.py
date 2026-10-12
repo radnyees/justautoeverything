@@ -1,15 +1,19 @@
 """Multi-atlas ensemble: tangent-space embedding of Ledoit-Wolf shrunk correlation matrices
 (CC200, CC400, AAL, HO; no GSR) with per-site Riemannian re-centering (each site's log-Euclidean
 mean is used as that site's tangent reference) plus per-site dispersion stretching (Riemannian
-Procrustes: each site's tangent vectors scaled to unit RMS norm), L2 logistic regression per
-atlas, averaged standardized scores."""
+Procrustes: each site's tangent vectors scaled to unit RMS norm), isotropic (metric-preserving)
+global scaling instead of per-feature standardization, L2 logistic regression per atlas,
+averaged standardized scores. Because re-centering removes each site's diagnostic base rate,
+an empirical-Bayes site prior (shrunk training prevalence, in log-odds) is added back to the
+ensemble score after converting it to an approximate log-odds scale."""
 import numpy as np
 import pandas as pd
 from sklearn.covariance import LedoitWolf
 from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
 
 ATLASES = ["cc200", "cc400", "aal", "ho"]
+PRIOR_PSEUDO = 20.0   # pseudo-subjects shrinking each site's prevalence toward the global rate
+LOGODDS_SLOPE = 1.24  # binormal equal-variance log-odds per unit SD of a score with AUC ~0.78
 
 
 def _shrunk_corr(x):
@@ -112,11 +116,18 @@ def _atlas_scores(V_train, V_test, R, y_train, sites_train, sites_test):
     V_all = np.concatenate([V_train, V_test], axis=0)
     sites = np.concatenate([sites_train, sites_test])
     T = _recentered_tangent(V_all, R, sites)
-    T_train, T_test = T[:n_tr], T[n_tr:]
+    T_train, T_test = T[:n_tr].astype(np.float64), T[n_tr:].astype(np.float64)
 
-    sc = StandardScaler().fit(T_train)
-    T_train = sc.transform(T_train)
-    T_test = sc.transform(T_test)
+    # Isotropic scaling: center on training mean, one global scale so the mean feature
+    # variance is 1 (keeps the Riemannian metric's relative edge weighting intact).
+    mu = T_train.mean(axis=0)
+    T_train = T_train - mu
+    T_test = T_test - mu
+    tot_var = np.mean(T_train.var(axis=0))
+    g = 1.0 / np.sqrt(tot_var) if np.isfinite(tot_var) and tot_var > 1e-20 else 1.0
+    T_train *= g
+    T_test *= g
+
     clf = LogisticRegression(C=0.001 * np.sqrt(19900.0 / T_train.shape[1]), max_iter=5000)
     clf.fit(T_train, y_train)
     d_train = clf.decision_function(T_train)
@@ -125,6 +136,21 @@ def _atlas_scores(V_train, V_test, R, y_train, sites_train, sites_test):
     if not np.isfinite(s) or s < 1e-12:
         s = 1.0
     return (d_test - d_train.mean()) / s
+
+
+def _site_prior(y_pos, sites_train, sites_test):
+    """Empirical-Bayes site prevalence (shrunk toward the global rate), as log-odds offset."""
+    p0 = np.clip(y_pos.mean(), 1e-3, 1 - 1e-3)
+    logit0 = np.log(p0 / (1 - p0))
+    prior = np.zeros(len(sites_test), dtype=np.float64)
+    for s in np.unique(sites_test):
+        m = sites_train == s
+        n = m.sum()
+        if n == 0:
+            continue
+        p = (y_pos[m].sum() + PRIOR_PSEUDO * p0) / (n + PRIOR_PSEUDO)
+        prior[sites_test == s] = np.log(p / (1 - p)) - logit0
+    return prior
 
 
 def fit_predict(F_train, y_train, F_test, ctx):
@@ -139,4 +165,14 @@ def fit_predict(F_train, y_train, F_test, ctx):
     for (R, V_train), (_, V_test) in zip(tr, te):
         score += _atlas_scores(V_train, V_test, R, y_train, sites_train, sites_test)
     score /= max(len(tr), 1)
+
+    # Put the connectivity score on an approximate log-odds scale (unit SD on the test set,
+    # label-free), then add back the site base rate that per-site re-centering removed.
+    if len(score) >= 5:
+        sd = score.std()
+        if np.isfinite(sd) and sd > 1e-12:
+            score = (score - score.mean()) / sd
+    pos_label = np.unique(y_train)[-1]
+    y_pos = (y_train == pos_label).astype(np.float64)
+    score = LOGODDS_SLOPE * score + _site_prior(y_pos, sites_train, sites_test)
     return 1.0 / (1.0 + np.exp(-score))
