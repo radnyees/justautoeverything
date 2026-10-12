@@ -139,14 +139,16 @@ def fig_forest(df):
     ax.axvline(0, color=REF, lw=1)
     ax.set_yticks(ys)
     ax.set_yticklabels([f"{r['task']}  s{r['seed']}" for _, r in d.iterrows()], fontsize=8)
-    ax.set_xlabel("Held-out Eval gain over the seed (95% CI, subject-clustered paired bootstrap)")
+    ax.set_xlabel("Held-out Eval gain over the seed, 95% CI (subject-clustered paired bootstrap)\n"
+                  "AUROC units; prism_auc in mean per-drug Pearson r")
     ax.set_title("Eval gain per task and split", loc="left", fontweight="bold")
     ax.grid(True, axis="x", color=GRID, lw=0.8)
     ax.set_axisbelow(True)
     handles = [plt.Line2D([0], [0], color=color_of(p), lw=3, label=LABEL[p])
                for p in PROJECT_ORDER if p in set(d["project"])]
-    ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.6 / max(1, len(d) / 10)),
-              ncol=3, frameon=False, fontsize=8.5)
+    ax.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, 1.01), ncol=3, frameon=False,
+              fontsize=8.5)
+    ax.set_title("Eval gain per task and split", loc="left", fontweight="bold", pad=34)
     save(fig, "fig2_eval_gain_forest")
 
 
@@ -214,6 +216,48 @@ def fig_families(hist):
     save(fig, "fig4_families")
 
 
+# published results on the SAME dataset and metric (others are not directly comparable)
+LITERATURE = {"crc_baxter": (0.77, "Duvallet 2017 RF"), "helsinki": (0.955, "Tapani SVM (LOO)")}
+
+
+def fig_before_after(df):
+    """Per task: held-out Eval score of the seed (hollow) vs the champion (filled), per split."""
+    d = df.dropna(subset=["eval_gain"]).copy()
+    if d.empty:
+        return
+    d["key"] = d["project"].map(lambda p: PROJECT_ORDER.index(p) if p in PROJECT_ORDER else 9)
+    tasks = d.sort_values(["key", "task"])["task"].drop_duplicates().tolist()
+    n = len(tasks)
+    cols = min(4, n)
+    rows_ = int(np.ceil(n / cols))
+    fig, axes = plt.subplots(rows_, cols, figsize=(3.1 * cols, 2.7 * rows_), squeeze=False)
+    for ax, t in zip(axes.ravel(), tasks):
+        g = d[d["task"] == t].sort_values("seed")
+        c = color_of(g["project"].iloc[0])
+        for x, r in enumerate(g.itertuples()):
+            ax.annotate("", xy=(x, r.eval_champion), xytext=(x, r.eval_seed),
+                        arrowprops=dict(arrowstyle="->", color=c, lw=1.4, alpha=0.8))
+            ax.scatter([x], [r.eval_seed], s=42, facecolor="white", edgecolor=c, linewidth=1.6, zorder=3)
+            ax.scatter([x], [r.eval_champion], s=46, color=c, edgecolor="white", linewidth=1, zorder=4)
+        if t in LITERATURE:
+            v, lab = LITERATURE[t]
+            ax.axhline(v, color=REF, ls="--", lw=1)
+            ax.text(len(g) - 0.6, v, lab, ha="right", va="bottom", fontsize=7, color=MUT)
+        ax.set_xticks(range(len(g)))
+        ax.set_xticklabels([f"split {s}" for s in g["seed"]], fontsize=8)
+        ax.set_xlim(-0.6, len(g) - 0.4)
+        ax.set_title(t, loc="left", fontsize=9.5, fontweight="bold")
+        ax.grid(True, axis="y", color=GRID, lw=0.8)
+        ax.set_axisbelow(True)
+        ax.set_ylabel(g["metric"].iloc[0].replace("mean per-drug Pearson r", "mean drug r"), fontsize=8)
+    for ax in axes.ravel()[n:]:
+        ax.axis("off")
+    fig.suptitle("Held-out Eval: seed (hollow) -> loop champion (filled), scored once per split",
+                 x=0.01, ha="left", fontweight="bold", y=1.02)
+    fig.tight_layout()
+    save(fig, "fig6_before_after")
+
+
 def fig_external(df):
     """Seed vs champion on EXTERNAL datasets (other cohorts/sites), per split: do gains transfer?"""
     rows = []
@@ -262,6 +306,7 @@ def main():
     fig_trajectories(df, hist)
     fig_families(hist)
     fig_external(df)
+    fig_before_after(df)
     print(tasks.round(3).to_string() if not tasks.empty else "no finished tasks yet")
 
 
