@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.DS_Store
+catboost_info/
+# loop scratch file: the last candidate tried (solution.py is the champion)
+**/runs/**/candidate.py
+*.log
