@@ -10,6 +10,9 @@ Tasks (resting-state EEG, subject-level classification)
                  AGE-MATCHED as above.
   sz_aseeg     : schizophrenia vs healthy, ASEEG; eyes closed; the 16 channels shared with the
                  external sets; 128 Hz. External: MSU adolescents (16 ch, 1 min EC), RepOD (EC).
+  abnormal_tuab: abnormal vs normal clinical EEG (TUH Abnormal v3.0.1, official TRAIN split,
+                 grouped by patient); 5 min after the first minute, 19 channels, 100 Hz; condition
+                 "REST". External: the official TUAB EVAL split (276 recordings), scored once.
 items = list of "dataset:subject" ids; ctx["load_eeg"](items, "EC"|"EO") returns a list of float32
 arrays (channels x samples, microvolts) at ctx["fs"] with rows in ctx["channels"] order
 (None where a subject lacks that condition).
@@ -30,7 +33,8 @@ CH19 = ["Fp1", "Fp2", "F7", "F3", "Fz", "F4", "F8", "T7", "C3", "Cz", "C4", "T8"
 CH16 = ["F7", "F3", "F4", "F8", "T7", "C3", "Cz", "C4", "T8", "P7", "P3", "Pz", "P4", "P8", "O1", "O2"]
 SPEC = {"mdd_tdbrain": dict(fs=250, channels=CH19, conds=("EC", "EO")),
         "adhd_tdbrain": dict(fs=250, channels=None, conds=("EC", "EO")),
-        "sz_aseeg": dict(fs=128, channels=CH16, conds=("EC",))}
+        "sz_aseeg": dict(fs=128, channels=CH16, conds=("EC",)),
+        "abnormal_tuab": dict(fs=100, channels=CH19, conds=("REST",))}
 
 
 @lru_cache(maxsize=None)
@@ -106,6 +110,22 @@ def load(task):
             ext_items = [f"{ds}:{s}" for s in m["subject"]]
             external[ds] = {"items": ext_items, "y": (m["status"] == "SZ").astype(int).values,
                             "groups": np.array(ext_items), "meta": pd.DataFrame(index=ext_items)}
+    elif task == "abnormal_tuab":
+        p = pd.read_csv(DATA / "tuab" / "participants.csv")
+        tr, ev = p[p["split"] == "train"], p[p["split"] == "eval"]
+        items = [f"tuab:{s}" for s in tr["subject"]]
+        y = (tr["status"] == "abnormal").astype(int).values
+        meta = pd.DataFrame(index=items)
+        note = {}
+        groups = np.array([f"tuab:{g}" for g in tr["patient"]])
+        ext_items = [f"tuab:{s}" for s in ev["subject"]]
+        external["tuab_official_eval"] = {
+            "items": ext_items, "y": (ev["status"] == "abnormal").astype(int).values,
+            "groups": np.array([f"tuab:{g}" for g in ev["patient"]]), "meta": pd.DataFrame(index=ext_items)}
+        ctx = {"fs": spec["fs"], "channels": spec["channels"], "conditions": list(spec["conds"]),
+               "load_eeg": _loader(task)}
+        return {"items": items, "y": y, "groups": groups, "strata": y.astype(str), "meta": meta,
+                "ctx": ctx, "external": external}
     else:
         raise KeyError(task)
     chans = spec["channels"] or _info("tdbrain")["channels"]
