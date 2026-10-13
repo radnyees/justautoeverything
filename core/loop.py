@@ -170,6 +170,12 @@ def main():
     ap.add_argument("--time-limit", type=int, default=1500, help="seconds per candidate")
     ap.add_argument("--llm-timeout", type=int, default=1200)
     ap.add_argument("--llm-retries", type=int, default=6)
+    ap.add_argument("--strategy", default="loop", choices=["loop", "best_of_n"],
+                    help="loop = iterative keep-if-better with full history (the method); best_of_n = "
+                         "baseline: every round sees only the brief + the SEED solution (no history, no "
+                         "feedback); the best Dev candidate is kept. Round 1 of best_of_n = one-shot baseline.")
+    ap.add_argument("--runs-subdir", default="runs", help="runs | runs_bestof20 | runs_repeat ...")
+    ap.add_argument("--run-name", default=None, help="run folder name (default s<seed>)")
     args = ap.parse_args()
 
     cfg = project_cfg(args.project)
@@ -177,7 +183,7 @@ def main():
     size = tcfg.get("size", "m")
     pdir = ROOT / "projects" / args.project
     runs_root = Path(os.environ.get("JAE_RUNS_ROOT", ROOT / "projects"))   # /runs on Modal
-    run_dir = runs_root / args.project / "runs" / args.task / f"s{args.seed}"
+    run_dir = runs_root / args.project / args.runs_subdir / args.task / (args.run_name or f"s{args.seed}")
     run_dir.mkdir(parents=True, exist_ok=True)
     solution, candidate = run_dir / "solution.py", run_dir / "candidate.py"
     history_path = run_dir / "history.jsonl"
@@ -196,6 +202,12 @@ def main():
     if best == NEG_INF:
         sys.exit(f"[loop] the current solution does not run:\n{log}")
     best_code = solution.read_text()
+    seed_code, seed_score = best_code, best                 # what best_of_n always shows the LLM
+    if args.strategy == "best_of_n" and (run_dir / "baseline.json").exists():
+        seed_code = (pdir / "seeds" / f"{args.task}.py") if (pdir / "seeds" / f"{args.task}.py").exists() \
+            else (pdir / "seeds" / "default.py")
+        seed_code = seed_code.read_text()
+        seed_score = json.loads((run_dir / "baseline.json").read_text())["dev"]
     (run_dir / "score.txt").write_text(f"{best:.6f}\n")
     if not (run_dir / "baseline.json").exists():          # the seed's Dev score, recorded once
         (run_dir / "baseline.json").write_text(json.dumps({"dev": best, "model": args.model,
@@ -215,11 +227,15 @@ def main():
     last_fail = None
 
     for rnd in range(start, args.rounds + 1):
-        if stale >= args.patience:
+        if args.strategy == "loop" and stale >= args.patience:
             print(f"[loop] no improvement in {args.patience} rounds -- converged.")
             break
-        prompt = build_prompt(brief, program, args.task, tcfg, families, best_code, best,
-                              history, last_fail)
+        if args.strategy == "loop":
+            prompt = build_prompt(brief, program, args.task, tcfg, families, best_code, best,
+                                  history, last_fail)
+        else:                                               # independent sample: no history/feedback
+            prompt = build_prompt(brief, program, args.task, tcfg, families, seed_code, seed_score,
+                                  [], None)
         reply = None
         for attempt in range(1, args.llm_retries + 1):
             try:
@@ -237,6 +253,8 @@ def main():
             continue
 
         candidate.write_text(code)
+        (run_dir / "candidates").mkdir(exist_ok=True)
+        (run_dir / "candidates" / f"round_{rnd:02d}.py").write_text(code)   # every candidate kept
         t0 = time.time()
         score, log, _ = evaluate(args.project, args.task, size, code, args.seed,
                                  time_limit=args.time_limit)
@@ -255,7 +273,8 @@ def main():
               f"(best {best:.6f}, stale {stale}) | {rationale}", flush=True)
         rec = {"round": rnd, "rationale": rationale, "families": fams, "score": score,
                "delta": delta, "kept": kept, "seconds": secs, "model": args.model,
-               "effort": args.effort, "time": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+               "effort": args.effort, "strategy": args.strategy,
+               "time": datetime.now(timezone.utc).isoformat(timespec="seconds")}
         if score == NEG_INF:
             rec["fail_log"] = log[-1500:]
         history.append(rec)

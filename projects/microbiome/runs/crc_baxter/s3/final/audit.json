@@ -1,0 +1,74 @@
+{
+ "seed": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.774031007751938,
+  "score_joint": 0.774031007751938,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_expected_richness",
+    "_shannon",
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": [
+    {
+     "function": "fit_predict",
+     "line": 187,
+     "code": "return 0.5 * rankdata(p_rf) / n + 0.5 * rankdata(p_lr) / n"
+    }
+   ]
+  },
+  "score": 0.5662790697674418,
+  "score_joint": 0.6790697674418604,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "seed_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.774031007751938,
+  "score_joint": 0.774031007751938,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_expected_richness",
+    "_shannon",
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": [
+    {
+     "function": "fit_predict",
+     "line": 187,
+     "code": "return 0.5 * rankdata(p_rf) / n + 0.5 * rankdata(p_lr) / n"
+    }
+   ]
+  },
+  "score": 0.656201550387597,
+  "score_joint": 0.6790697674418604,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ }
+}

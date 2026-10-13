@@ -1,0 +1,70 @@
+{
+ "seed": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.888888888888889,
+  "score_joint": 0.888888888888889,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": [
+    {
+     "function": "_rank_int",
+     "line": 94,
+     "code": "Ztr[:, j] = norm.ppf((rankdata(x, method=\"average\") - 0.5) / n)"
+    }
+   ]
+  },
+  "score": 0.7948717948717948,
+  "score_joint": 0.7948717948717948,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "seed_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.888888888888889,
+  "score_joint": 0.888888888888889,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": [
+    {
+     "function": "_rank_int",
+     "line": 94,
+     "code": "Ztr[:, j] = norm.ppf((rankdata(x, method=\"average\") - 0.5) / n)"
+    }
+   ]
+  },
+  "score": 0.7948717948717948,
+  "score_joint": 0.7948717948717948,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ }
+}

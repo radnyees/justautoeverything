@@ -8,10 +8,19 @@ subject-clustered bootstrap. Nothing here feeds back into any loop decision.
 
     ./core/run.sh python core/final.py microbiome crc_baxter --seeds 1 2 3
 Writes projects/<p>/runs/<task>/s<seed>/final/{seed,champion}.json and final_scores.json.
+
+Baselines / repeats (same split seeds, same frozen seed predictions):
+    final.py <p> <task> --subdir runs_bestof20                        # best-of-20 champions
+    final.py <p> <task> --subdir runs_bestof20 --solution candidates/round_01.py --tag oneshot
+    final.py <p> <task> --subdir runs_optuna
+    final.py <p> <task> --subdir runs_repeat --runs s1r2 s1r3
+The seed's Eval predictions are taken from runs/<task>/s<k>/final/seed.json when present, so every
+comparison on a split is paired against identical seed predictions.
 """
 import argparse
 import importlib.util
 import json
+import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -67,8 +76,15 @@ def main():
     ap.add_argument("project")
     ap.add_argument("task")
     ap.add_argument("--seeds", type=int, nargs="+", default=[1, 2, 3])
+    ap.add_argument("--subdir", default="runs")
+    ap.add_argument("--runs", nargs="+", default=None, help="run names (default s<seed>)")
+    ap.add_argument("--solution", default="solution.py", help="file inside the run dir to score")
+    ap.add_argument("--tag", default="", help="output suffix: final_scores<_tag>.json, final<_tag>/")
     ap.add_argument("--time-limit", type=int, default=3600)
     a = ap.parse_args()
+    names = a.runs or [f"s{s}" for s in a.seeds]
+    split_of = {n: int(re.match(r"s(\d+)", n).group(1)) for n in names}
+    sfx = f"_{a.tag}" if a.tag else ""
 
     import modal
     cfg = project_cfg(a.project)["tasks"][a.task]
@@ -79,30 +95,57 @@ def main():
     seed_code = (seed_file if seed_file.exists() else pdir / "seeds" / "default.py").read_text()
     b = bundle(a.project)
 
+    def seed_report(s):
+        f = pdir / "runs" / a.task / f"s{s}" / "final" / "seed.json"
+        return f.read_text() if f.exists() else None
+
     jobs = {}
     with ThreadPoolExecutor(8) as ex:
-        for s in a.seeds:
-            run = pdir / "runs" / a.task / f"s{s}"
-            for name, code in [("seed", seed_code), ("champion", (run / "solution.py").read_text())]:
-                jobs[(s, name)] = ex.submit(fn.remote, a.project, a.task, code, "eval", s, True,
-                                            a.time_limit, b)
+        for n in names:
+            run = pdir / a.subdir / a.task / n
+            s = split_of[n]
+            if seed_report(s) is None and (s, "seed") not in jobs:
+                jobs[(s, "seed")] = ex.submit(fn.remote, a.project, a.task, seed_code, "eval", s, True,
+                                              a.time_limit, b)
+            jobs[(n, "champion")] = ex.submit(fn.remote, a.project, a.task, (run / a.solution).read_text(),
+                                              "eval", s, True, a.time_limit, b)
         res = {k: v.result() for k, v in jobs.items()}
 
-    for s in a.seeds:
-        run = pdir / "runs" / a.task / f"s{s}"
-        (run / "final").mkdir(exist_ok=True)
+    def report_of(key):
+        r = res[key]
+        if r.get("score") is None:
+            return None, r.get("log", "")[-2000:]
+        return r["report"], None
+
+    for n in names:
+        s = split_of[n]
+        run = pdir / a.subdir / a.task / n
+        (run / f"final{sfx}").mkdir(exist_ok=True)
         reps = {}
-        for name in ("seed", "champion"):
-            r = res[(s, name)]
-            if r.get("score") is None:
-                raise SystemExit(f"s{s} {name} failed on Eval:\n{r.get('log', '')[-2000:]}")
-            reps[name] = json.loads(r["report"])
-            (run / "final" / f"{name}.json").write_text(r["report"])
-        base = json.loads((run / "baseline.json").read_text())
-        out = {"project": a.project, "task": a.task, "seed": s,
-               "dev_seed": base["dev"], "dev_champion": float((run / "score.txt").read_text()),
+        txt = seed_report(s)
+        if txt is None:
+            txt, err = report_of((s, "seed"))
+            if txt is None:
+                raise SystemExit(f"{n} seed failed on Eval:\n{err}")
+        reps["seed"] = json.loads(txt)
+        (run / f"final{sfx}" / "seed.json").write_text(txt)
+        txt, err = report_of((n, "champion"))
+        if txt is None:                         # e.g. a one-shot candidate that does not run
+            out = {"project": a.project, "task": a.task, "seed": s, "run": n, "subdir": a.subdir,
+                   "solution": a.solution, "failed": True, "error": err[-600:],
+                   "eval_seed": reps["seed"]["score"]}
+            (run / f"final_scores{sfx}.json").write_text(json.dumps(out, indent=2) + "\n")
+            print(f"{a.project}/{a.task} {a.subdir}/{n} {a.solution}: FAILED on Eval", flush=True)
+            continue
+        reps["champion"] = json.loads(txt)
+        (run / f"final{sfx}" / "champion.json").write_text(txt)
+        base = json.loads((pdir / "runs" / a.task / f"s{s}" / "baseline.json").read_text()) \
+            if not (run / "baseline.json").exists() else json.loads((run / "baseline.json").read_text())
+        out = {"project": a.project, "task": a.task, "seed": s, "run": n, "subdir": a.subdir,
+               "solution": a.solution, "dev_seed": base["dev"],
+               "dev_champion": _dev_of(run, a.solution, base["dev"]),
                "eval_seed": reps["seed"]["score"], "eval_champion": reps["champion"]["score"]}
-        out["dev_gain"] = out["dev_champion"] - out["dev_seed"]
+        out["dev_gain"] = (out["dev_champion"] - out["dev_seed"]) if out["dev_champion"] is not None else None
         out["eval_gain"] = out["eval_champion"] - out["eval_seed"]
         rs, rc = reps["seed"], reps["champion"]
         out["eval_bootstrap"] = paired_bootstrap(prep.score, rs["y"], rs["predictions"],
@@ -117,13 +160,27 @@ def main():
                                               ex_c["predictions"], ex_s["groups"], a.task,
                                               sites=ex_s.get("sites"))
             out["external"][name] = e
-        (run / "final_scores.json").write_text(json.dumps(out, indent=2) + "\n")
+        (run / f"final_scores{sfx}.json").write_text(json.dumps(out, indent=2) + "\n")
         ext = "  ".join(f"{k} {v['seed']:.3f}->{v['champion']:.3f}" for k, v in out["external"].items())
-        print(f"{a.project}/{a.task} s{s}: Dev {out['dev_seed']:.3f}->{out['dev_champion']:.3f} | "
+        dev = f"{out['dev_champion']:.3f}" if out["dev_champion"] is not None else "?"
+        print(f"{a.project}/{a.task} {a.subdir}/{n} {a.solution}: Dev {out['dev_seed']:.3f}->{dev} | "
               f"Eval {out['eval_seed']:.3f}->{out['eval_champion']:.3f} "
               f"(gain {out['eval_gain']:+.3f}, 95% CI {out['eval_bootstrap']['ci95'][0]:+.3f}.."
               f"{out['eval_bootstrap']['ci95'][1]:+.3f}, p={out['eval_bootstrap']['p_one_sided']:.3f})"
               + (f" | external: {ext}" if ext else ""), flush=True)
+
+
+def _dev_of(run, solution, dev_seed):
+    """Dev score of the scored file: score.txt for the champion, the history record for a candidate."""
+    if solution == "solution.py":
+        return float((run / "score.txt").read_text())
+    m = re.match(r"candidates/round_(\d+)\.py$", solution)
+    if m and (run / "history.jsonl").exists():
+        for line in (run / "history.jsonl").read_text().splitlines():
+            h = json.loads(line)
+            if h["round"] == int(m.group(1)):
+                return h["score"] if h["score"] is not None and np.isfinite(h["score"]) else None
+    return None
 
 
 if __name__ == "__main__":

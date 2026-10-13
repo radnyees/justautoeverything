@@ -138,7 +138,7 @@ orch_image = base.run_commands(
 @app.function(image=orch_image, volumes={"/runs": runs}, secrets=[modal.Secret.from_name("jae-claude")],
               cpu=0.5, memory=2048, timeout=24 * 3600)
 def orchestrate(project, task, seed, rounds=20, patience=10, effort="high", model="claude-opus-5-5",
-                bundle=None):
+                bundle=None, extra=()):
     """Run one autoresearch loop (core/loop.py) inside Modal; history lives on the jae-runs volume
     (/runs/<project>/runs/<task>/s<seed>/), committed every minute so nothing is lost."""
     import shutil
@@ -148,7 +148,9 @@ def orchestrate(project, task, seed, rounds=20, patience=10, effort="high", mode
 
     runs.reload()
     repo = _repo(bundle)
-    log_dir = f"/runs/{project}/runs/{task}"
+    sub = dict(zip(extra[::2], extra[1::2])).get("--runs-subdir", "runs")
+    name = dict(zip(extra[::2], extra[1::2])).get("--run-name", f"s{seed}")
+    log_dir = f"/runs/{project}/{sub}/{task}"
     os.makedirs(log_dir, exist_ok=True)
     stop = threading.Event()
 
@@ -164,10 +166,10 @@ def orchestrate(project, task, seed, rounds=20, patience=10, effort="high", mode
            "CLAUDE_BIN": shutil.which("claude") or "claude", "PYTHONUNBUFFERED": "1"}
     p = subprocess.Popen([sys.executable, "-u", f"{repo}/core/loop.py", "--project", project, "--task", task,
                           "--seed", str(seed), "--rounds", str(rounds), "--patience", str(patience),
-                          "--effort", effort, "--model", model],
+                          "--effort", effort, "--model", model, *extra],
                          cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     for line in p.stdout:                       # append + close per line so commits always see it
-        with open(f"{log_dir}/s{seed}.log", "a") as log:
+        with open(f"{log_dir}/{name}.log", "a") as log:
             log.write(line)
     p.wait()
     stop.set()

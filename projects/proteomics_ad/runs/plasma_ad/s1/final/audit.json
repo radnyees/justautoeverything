@@ -1,0 +1,136 @@
+{
+ "seed": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.9401709401709402,
+  "score_joint": 0.9401709401709402,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_batch_vector",
+    "_panel_score",
+    "_remove_contamination",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "_panel_score",
+     "line": 71,
+     "code": "sub = sub.loc[:, sub.notna().mean() >= min_present]"
+    },
+    {
+     "function": "_panel_score",
+     "line": 74,
+     "code": "z = (sub - sub.mean()) / sub.std().replace(0, np.nan)"
+    },
+    {
+     "function": "_panel_score",
+     "line": 78,
+     "code": "if s.std() < 1e-8:"
+    },
+    {
+     "function": "_panel_score",
+     "line": 80,
+     "code": "return ((s - s.mean()) / s.std()).values"
+    },
+    {
+     "function": "_remove_contamination",
+     "line": 94,
+     "code": "Sc = Sj - Sj.mean(axis=0)"
+    },
+    {
+     "function": "_remove_contamination",
+     "line": 96,
+     "code": "yc = y - y.mean()"
+    },
+    {
+     "function": "featurize",
+     "line": 114,
+     "code": "med = L.loc[rows].median(axis=0)"
+    }
+   ],
+   "batch_relative_outputs": []
+  },
+  "score": 0.905982905982906,
+  "score_joint": 0.923076923076923,
+  "feat_max_rel_diff": 10.013106072965332,
+  "n_chunks": 20
+ },
+ "seed_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.9401709401709402,
+  "score_joint": 0.9401709401709402,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_batch_vector",
+    "_panel_score",
+    "_remove_contamination",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "_panel_score",
+     "line": 71,
+     "code": "sub = sub.loc[:, sub.notna().mean() >= min_present]"
+    },
+    {
+     "function": "_panel_score",
+     "line": 74,
+     "code": "z = (sub - sub.mean()) / sub.std().replace(0, np.nan)"
+    },
+    {
+     "function": "_panel_score",
+     "line": 78,
+     "code": "if s.std() < 1e-8:"
+    },
+    {
+     "function": "_panel_score",
+     "line": 80,
+     "code": "return ((s - s.mean()) / s.std()).values"
+    },
+    {
+     "function": "_remove_contamination",
+     "line": 94,
+     "code": "Sc = Sj - Sj.mean(axis=0)"
+    },
+    {
+     "function": "_remove_contamination",
+     "line": 96,
+     "code": "yc = y - y.mean()"
+    },
+    {
+     "function": "featurize",
+     "line": 114,
+     "code": "med = L.loc[rows].median(axis=0)"
+    }
+   ],
+   "batch_relative_outputs": []
+  },
+  "score": 0.905982905982906,
+  "score_joint": 0.923076923076923,
+  "feat_max_rel_diff": 10.013106072965332,
+  "n_chunks": 20
+ }
+}

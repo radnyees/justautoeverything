@@ -1,0 +1,1 @@
+{"static": {"has_featurize": true, "functions": ["featurize"], "hits": [], "batch_relative_outputs": []}, "score": 0.9522222222222222, "score_joint": 0.9522222222222222, "feat_max_rel_diff": 0.0, "n_chunks": 20}

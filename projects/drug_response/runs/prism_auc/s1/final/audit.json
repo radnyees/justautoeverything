@@ -1,0 +1,46 @@
+{
+ "seed": {
+  "static": {
+   "has_featurize": false,
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.1678972318218407,
+  "score_joint": 0.1678972318218407,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion": {
+  "static": {
+   "has_featurize": false,
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.1817757782359676,
+  "score_joint": 0.18177577524390287,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "seed_ref": {
+  "static": {
+   "has_featurize": false,
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.1678972318218407,
+  "score_joint": 0.1678972318218407,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion_ref": {
+  "static": {
+   "has_featurize": false,
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.18177577760040628,
+  "score_joint": 0.1817757776004062,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ }
+}

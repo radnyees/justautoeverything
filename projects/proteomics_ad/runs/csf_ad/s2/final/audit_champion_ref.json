@@ -1,0 +1,1 @@
+{"static": {"has_featurize": true, "functions": ["featurize"], "hits": [{"function": "featurize", "line": 48, "code": "frac = L.notna().mean(axis=0)"}], "batch_relative_outputs": []}, "score": 0.9355555555555556, "score_joint": 0.9522222222222222, "feat_max_rel_diff": 0.15461622697703684, "n_chunks": 20}

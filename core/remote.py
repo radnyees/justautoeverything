@@ -20,20 +20,27 @@ from bundle import bundle  # noqa: E402
 CALLS = ROOT / "results" / "remote_calls.json"
 
 
-def launch(project, tasks, seeds, rounds=20, patience=10, effort="high"):
+def launch(project, tasks, seeds, rounds=20, patience=10, effort="high", strategy="loop",
+           subdir="runs", repeats=""):
+    """seeds: split seeds; repeats (optional, e.g. "2 3"): extra independent loop runs on each
+    seed, stored as s<seed>r<k> in <subdir>."""
     fn = modal.Function.from_name("jae", "orchestrate")
     calls = json.loads(CALLS.read_text()) if CALLS.exists() else {}
     b = bundle(project)
     for t in tasks.split():
         for s in seeds.split():
-            c = fn.spawn(project, t, int(s), int(rounds), int(patience), effort, "claude-opus-5-5", b)
-            calls[f"{project}/{t}/s{s}"] = c.object_id
-            print("launched", project, t, s, c.object_id, flush=True)
+            for r in (repeats.split() or [None]):
+                name = f"s{s}" + (f"r{r}" if r else "")
+                extra = ["--strategy", strategy, "--runs-subdir", subdir, "--run-name", name]
+                c = fn.spawn(project, t, int(s), int(rounds), int(patience), effort, "claude-opus-5-5", b,
+                             extra)
+                calls[f"{project}/{subdir}/{t}/{name}"] = c.object_id
+                print("launched", project, subdir, t, name, c.object_id, flush=True)
     CALLS.parent.mkdir(exist_ok=True)
     CALLS.write_text(json.dumps(calls, indent=1))
 
 
-def sync(project):
+def sync(project, subdir="runs"):
     """MERGE the remote run records into projects/<project>/runs: files on the volume are copied
     over local ones, but local-only files (final_scores.json, final/ predictions written by
     core/final.py) are never deleted."""
@@ -41,10 +48,10 @@ def sync(project):
     import tempfile
     dst = ROOT / "projects" / project
     with tempfile.TemporaryDirectory() as tmp:
-        subprocess.run(["modal", "volume", "get", "--force", "jae-runs", f"/{project}/runs", tmp], check=True)
-        src = Path(tmp) / "runs"
+        subprocess.run(["modal", "volume", "get", "--force", "jae-runs", f"/{project}/{subdir}", tmp], check=True)
+        src = Path(tmp) / subdir
         if src.exists():
-            shutil.copytree(src, dst / "runs", dirs_exist_ok=True)
+            shutil.copytree(src, dst / subdir, dirs_exist_ok=True)
     print("synced", project)
 
 
@@ -63,4 +70,6 @@ def status():
 
 if __name__ == "__main__":
     cmd = sys.argv[1]
-    {"launch": lambda: launch(*sys.argv[2:]), "sync": lambda: sync(sys.argv[2]), "status": status}[cmd]()
+    kw = dict(a.split("=", 1) for a in sys.argv[2:] if "=" in a)
+    pos = [a for a in sys.argv[2:] if "=" not in a]
+    {"launch": lambda: launch(*pos, **kw), "sync": lambda: sync(*pos, **kw), "status": status}[cmd]()

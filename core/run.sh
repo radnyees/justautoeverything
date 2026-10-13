@@ -7,7 +7,7 @@
 set -euo pipefail
 set -a
 . "$HOME/.config/autoresearch/modal.env"
-. "$HOME/.config/autoresearch/claude.env"
+[ -f "$HOME/.config/autoresearch/claude.env" ] && . "$HOME/.config/autoresearch/claude.env"   # local loops only
 set +a
 export PATH="$HOME/.local/bin:$PATH" CLAUDE_CONFIG_DIR="$HOME/.config/autoresearch/claude-cli"
 cd "$(dirname "$0")/.."

@@ -139,6 +139,8 @@ def run(solution_path):
     task = os.environ["JAE_TASK"]
     seed = int(os.environ.get("JAE_SEED", "1"))
     mode = os.environ.get("JAE_MODE", "dev")
+    if ":" in mode:                              # e.g. "audit:10" = audit with 10 Eval chunks
+        mode, os.environ["JAE_AUDIT_CHUNKS"] = mode.split(":", 1)
     sys.path.insert(0, str(ROOT / "projects" / project))
     sys.path.insert(0, str(ROOT))
     prepare = importlib.import_module("prepare")
@@ -203,6 +205,54 @@ def run(solution_path):
                          "groups": _jsonable(ex["groups"]), "sites": _jsonable(ex.get("sites"))}
             print(f"[harness] external {name}: SCORE {ext[name]['score']:.6f}", flush=True)
         report["external"] = ext
+    elif mode in ("audit", "audit_ref"):
+        # Transduction audit (never used for selection). (1) featurize: do the dev-pool features
+        # change when the Eval items are featurized together with them (as in mode eval)?
+        # (2) deployment-style Eval: dev features computed WITHOUT any Eval item; Eval items arrive
+        # in small chunks, each featurized with the dev pool only and predicted on its own, so no
+        # statistic can be shared across Eval items. Equal to mode eval for inductive pipelines.
+        # audit_ref: each chunk is predicted inside a reference batch = dev pool + chunk (only the
+        # chunk's outputs are kept), so batch-relative steps in fit_predict (test-set ranks/scaling)
+        # use data available at training time -- a deployable version of such pipelines.
+        both = np.concatenate([dev_idx, eval_idx])
+        nd = len(dev_idx)
+        F_all = featurize(both)
+        F_dev_joint, F_ev_joint = take(F_all, np.arange(nd)), take(F_all, np.arange(nd, len(both)))
+        F_dev = featurize(dev_idx)
+        feat_diff = _max_rel_diff(F_dev_joint, F_dev)
+        y_dev, y_ev = take(ds["y"], dev_idx), take(ds["y"], eval_idx)
+        ctx = dict(ctx_base, meta_train=take(ds.get("meta"), dev_idx),
+                   meta_test=take(ds.get("meta"), eval_idx), groups_train=take(ds["groups"], dev_idx))
+        sites = take(ds.get("sites"), eval_idx)
+        pred_joint = list(sol.fit_predict(F_dev_joint, y_dev, F_ev_joint, ctx))
+        n_chunks = min(len(eval_idx), int(os.environ.get("JAE_AUDIT_CHUNKS", "20")))
+        order = np.random.default_rng(seed).permutation(len(eval_idx))
+        pred_ind = [None] * len(eval_idx)
+        for c, pos in enumerate(np.array_split(order, n_chunks)):
+            pos = np.sort(pos)
+            if feat_diff > 1e-6:                # batch-dependent featurize: dev pool + this chunk only
+                Fx = featurize(np.concatenate([dev_idx, eval_idx[pos]]))
+                F_tr, Fc = take(Fx, np.arange(nd)), take(Fx, np.arange(nd, nd + len(pos)))
+            else:                               # featurize is per-item: featurize the chunk alone
+                F_tr, Fc = F_dev, featurize(eval_idx[pos])
+            if mode == "audit_ref":
+                ref_idx = np.concatenate([dev_idx, eval_idx[pos]])
+                cctx = dict(ctx, meta_test=take(ds.get("meta"), ref_idx))
+                out = list(sol.fit_predict(F_tr, y_dev, _concat(F_tr, Fc), cctx))[nd:]
+            else:
+                cctx = dict(ctx, meta_test=take(ds.get("meta"), eval_idx[pos]))
+                out = list(sol.fit_predict(F_tr, y_dev, Fc, cctx))
+            for j, p in zip(pos, out):
+                pred_ind[j] = p
+            print(f"[harness] audit chunk {c + 1}/{n_chunks}", flush=True)
+        s_joint = _score(prepare, y_ev, pred_joint, task, sites)
+        score = _score(prepare, y_ev, pred_ind, task, sites)
+        print(f"[harness] audit: featurize max rel diff {feat_diff:.3g}; Eval joint {s_joint:.6f} "
+              f"-> chunked inductive {score:.6f}", flush=True)
+        report.update(score=score, score_joint=s_joint, feat_max_rel_diff=feat_diff, n_chunks=n_chunks,
+                      predictions=_jsonable(pred_ind), predictions_joint=_jsonable(pred_joint),
+                      y=_jsonable(y_ev), groups=_jsonable(take(ds["groups"], eval_idx)),
+                      sites=_jsonable(sites))
     else:
         raise SystemExit(f"unknown JAE_MODE {mode}")
 
@@ -210,6 +260,43 @@ def run(solution_path):
     if os.environ.get("JAE_REPORT"):
         Path(os.environ.get("JAE_REPORT_PATH", "report.json")).write_text(json.dumps(report))
     print(f"SCORE: {score:.6f}", flush=True)
+
+
+def _concat(a, b):
+    """Row-concatenate two feature batches of the same type (array, DataFrame, list, dict)."""
+    if hasattr(a, "iloc"):
+        import pandas as pd
+        return pd.concat([a, b])
+    if isinstance(a, np.ndarray):
+        return np.concatenate([a, b])
+    if isinstance(a, dict):
+        return {k: _concat(a[k], b[k]) for k in a}
+    return list(a) + list(b)
+
+
+def _max_rel_diff(a, b):
+    """Largest |a - b| / (|b| scale) over all feature values (lists of per-item arrays allowed);
+    inf if the shapes differ."""
+    def flat(x):
+        if hasattr(x, "to_numpy"):
+            x = x.to_numpy()
+        if isinstance(x, dict):
+            return [u for k in sorted(x) for u in flat(x[k])]
+        if isinstance(x, (list, tuple)):
+            return [u for v in x for u in flat(v)]
+        return [np.asarray(x, dtype=float).ravel()]
+    try:
+        fa, fb = flat(a), flat(b)
+    except (TypeError, ValueError):            # non-numeric features: treat as batch-dependent
+        return float("inf")
+    if len(fa) != len(fb) or any(u.shape != v.shape for u, v in zip(fa, fb)):
+        return float("inf")
+    ua, ub = np.concatenate(fa), np.concatenate(fb)
+    ok = np.isfinite(ua) & np.isfinite(ub)
+    if (np.isfinite(ua) != np.isfinite(ub)).any():
+        return float("inf")
+    scale = np.abs(ub[ok]).mean() + 1e-12 if ok.any() else 1.0
+    return float(np.abs(ua[ok] - ub[ok]).max() / scale) if ok.any() else 0.0
 
 
 def _jsonable(x):

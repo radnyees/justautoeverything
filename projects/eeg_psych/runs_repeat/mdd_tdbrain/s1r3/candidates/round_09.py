@@ -1,0 +1,288 @@
+"""Log relative band power (delta/theta/alpha/beta/gamma) per channel from Welch PSD of each
+available condition -> standardized L2 logistic regression, averaged with a second L2 logistic
+regression on Riemannian tangent-space features of trace-normalized filter-bank spatial
+covariances (1-45 Hz broadband + theta, alpha, beta) per condition, a third L2 logistic
+regression on debiased weighted phase-lag index (wPLI) connectivity (all channel pairs; delta,
+theta, alpha, beta) per condition, a fourth L2 logistic regression on orthogonalized
+amplitude-envelope correlation (AEC, Hipp 2012; all channel pairs; delta, theta, alpha, beta)
+per condition, a fifth L2 logistic regression on spectral-shape features per channel and
+condition (aperiodic 1/f exponent, individual alpha peak frequency, alpha peak height above the
+aperiodic fit), and a sixth L2 logistic regression on scale-invariant signal-complexity features
+per channel and condition (Higuchi and Katz fractal dimension, permutation entropy, Hjorth
+mobility/complexity: median over 4-s epochs of the 1-45 Hz signal; plus spectral entropy).
+The regularization strength of each logistic regression is chosen by subject-grouped inner CV
+(AUROC) on the training fold."""
+import numpy as np
+from scipy.signal import welch, butter, sosfiltfilt, hilbert
+from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
+from sklearn.model_selection import GroupKFold
+from sklearn.preprocessing import StandardScaler
+from pyriemann.tangentspace import TangentSpace
+
+BANDS = [(1, 4), (4, 8), (8, 13), (13, 30), (30, 45)]
+COV_BANDS = [(1, 45), (4, 8), (8, 13), (13, 30)]
+WPLI_BANDS = [(1, 4), (4, 8), (8, 13), (13, 30)]
+AEC_BANDS = [(1, 4), (4, 8), (8, 13), (13, 30)]
+N_SHAPE = 3
+N_CPLX = 6
+CS = np.logspace(-4, 1, 11)
+
+
+def _bandpower(x, fs):
+    f, p = welch(x, fs=fs, nperseg=int(2 * fs), axis=-1)
+    tot = p[:, (f >= 1) & (f <= 45)].sum(axis=1, keepdims=True) + 1e-12
+    return np.log(np.stack([p[:, (f >= a) & (f < b)].sum(axis=1) for a, b in BANDS], axis=1) / tot)
+
+
+def _shape(x, fs):
+    """Aperiodic exponent (log-log fit 2-40 Hz excluding 6-14 Hz, with one robust refit),
+    alpha peak frequency (centroid of positive residual 7-14 Hz) and alpha peak height."""
+    f, p = welch(np.asarray(x, dtype=np.float64), fs=fs, nperseg=int(4 * fs), axis=-1)
+    lf = np.log10(f[(f >= 2) & (f <= 40)])
+    lp = np.log10(p[:, (f >= 2) & (f <= 40)] + 1e-20)
+    ff = f[(f >= 2) & (f <= 40)]
+    fitm = (ff < 6) | (ff > 14)
+    A = np.stack([np.ones(fitm.sum()), lf[fitm]], axis=1)
+    out = []
+    for ch in range(lp.shape[0]):
+        yv = lp[ch, fitm]
+        w = np.ones_like(yv)
+        for _ in range(2):                                # robust reweighting against bumps
+            coef = np.linalg.lstsq(A * w[:, None], yv * w, rcond=None)[0]
+            r = yv - A @ coef
+            s = 1.4826 * np.median(np.abs(r)) + 1e-9
+            w = 1.0 / np.maximum(1.0, np.abs(r) / (2.0 * s))
+        res = lp[ch] - (coef[0] + coef[1] * lf)
+        am = (ff >= 7) & (ff <= 14)
+        ra = res[am]
+        pos = np.clip(ra, 0, None)
+        paf = float((ff[am] * pos).sum() / pos.sum()) if pos.sum() > 1e-9 else 10.0
+        out.append([-coef[1], paf, float(ra.max())])
+    return np.asarray(out).ravel()
+
+
+def _complexity(x, fs):
+    """Per channel: median over 4-s epochs (1-45 Hz) of Higuchi FD, Katz FD, permutation
+    entropy (order 4, delay 2), Hjorth mobility and complexity; plus normalized spectral entropy."""
+    x = np.asarray(x, dtype=np.float64)
+    sos = butter(4, [1, 45], btype="bandpass", fs=fs, output="sos")
+    x = sosfiltfilt(sos, x, axis=-1)
+    nch = x.shape[0]
+    seg = int(4 * fs)
+    if x.shape[1] < seg:
+        x = np.pad(x, ((0, 0), (0, seg - x.shape[1])))
+    n = x.shape[1] // seg
+    X = x[:, :n * seg].reshape(nch, n, seg)
+    X = X - X.mean(axis=-1, keepdims=True)
+    # Hjorth
+    d1 = np.diff(X, axis=-1)
+    d2 = np.diff(d1, axis=-1)
+    v0 = X.var(axis=-1) + 1e-20
+    v1 = d1.var(axis=-1) + 1e-20
+    v2 = d2.var(axis=-1) + 1e-20
+    mob = np.sqrt(v1 / v0)
+    comp = np.sqrt(v2 / v1) / mob
+    # Higuchi fractal dimension
+    kmax = 10
+    lk = []
+    for k in range(1, kmax + 1):
+        Lm = []
+        for m in range(k):
+            xs = X[..., m::k]
+            nm = xs.shape[-1] - 1
+            Lm.append(np.abs(np.diff(xs, axis=-1)).sum(axis=-1) * (seg - 1) / (nm * k) / k)
+        lk.append(np.log(np.mean(Lm, axis=0) + 1e-20))
+    lk = np.stack(lk, axis=-1)
+    lx = np.log(1.0 / np.arange(1, kmax + 1))
+    lxc = lx - lx.mean()
+    hfd = ((lk - lk.mean(axis=-1, keepdims=True)) * lxc).sum(axis=-1) / (lxc ** 2).sum()
+    # Katz fractal dimension
+    L = np.abs(d1).sum(axis=-1) + 1e-20
+    d = np.abs(X - X[..., :1]).max(axis=-1) + 1e-20
+    nn = np.log10(seg - 1)
+    katz = nn / (nn + np.log10(d / L))
+    # permutation entropy
+    order, delay = 4, 2
+    m_len = seg - (order - 1) * delay
+    emb = np.stack([X[..., i * delay:i * delay + m_len] for i in range(order)], axis=-1)
+    perm = np.argsort(emb, axis=-1)
+    codes = (perm * (order ** np.arange(order))).sum(axis=-1).reshape(-1, m_len)
+    R = codes.shape[0]
+    cnt = np.bincount((np.arange(R)[:, None] * 256 + codes).ravel(),
+                      minlength=R * 256).reshape(R, 256).astype(np.float64)
+    pp = cnt / cnt.sum(axis=1, keepdims=True)
+    pe = (-(pp * np.log(pp + 1e-20)).sum(axis=1) / np.log(24.0)).reshape(nch, n)
+    # spectral entropy (1-45 Hz)
+    f, P = welch(x, fs=fs, nperseg=int(2 * fs), axis=-1)
+    Pb = P[:, (f >= 1) & (f <= 45)] + 1e-20
+    Pb = Pb / Pb.sum(axis=1, keepdims=True)
+    se = -(Pb * np.log(Pb)).sum(axis=1) / np.log(Pb.shape[1])
+    med = lambda a: np.median(a, axis=1)
+    out = np.stack([med(hfd), med(katz), med(pe), np.log(med(mob)), np.log(med(comp)), se], axis=1)
+    return out.ravel()
+
+
+def _cov(x, fs, lo, hi):
+    sos = butter(4, [lo, hi], btype="bandpass", fs=fs, output="sos")
+    xf = sosfiltfilt(sos, x.astype(np.float64), axis=-1)
+    xf = xf - xf.mean(axis=1, keepdims=True)
+    c = xf @ xf.T / xf.shape[1]
+    c = c / np.trace(c)                                  # amplitude-scale invariance
+    n = c.shape[0]
+    c = c + 1e-3 * np.eye(n) / n                         # keep SPD (e.g. rank-deficient references)
+    return c
+
+
+def _wpli(x, fs):
+    """Debiased wPLI (Vinck 2011) per band over 2-s Hann-windowed epochs x frequency bins."""
+    x = np.asarray(x, dtype=np.float64)
+    nch = x.shape[0]
+    seg = int(2 * fs)
+    n = max(1, x.shape[1] // seg)
+    if x.shape[1] < seg:
+        x = np.pad(x, ((0, 0), (0, seg - x.shape[1])))
+    X = x[:, :n * seg].reshape(nch, n, seg)
+    X = X - X.mean(axis=-1, keepdims=True)
+    X = np.fft.rfft(X * np.hanning(seg), axis=-1)
+    f = np.fft.rfftfreq(seg, 1.0 / fs)
+    iu = np.triu_indices(nch, 1)
+    out = []
+    for lo, hi in WPLI_BANDS:
+        Xb = X[:, :, (f >= lo) & (f < hi)].reshape(nch, -1)
+        im = np.imag(Xb[iu[0]] * np.conj(Xb[iu[1]]))     # pairs x (epochs*bins)
+        s = im.sum(axis=1)
+        s2 = (im ** 2).sum(axis=1)
+        sa = np.abs(im).sum(axis=1)
+        w = (s ** 2 - s2) / (sa ** 2 - s2 + 1e-20)
+        out.append(np.clip(w, -1.0, 1.0))
+    return np.concatenate(out)
+
+
+def _aec(x, fs):
+    """Orthogonalized amplitude-envelope correlation (Hipp 2012), symmetrized, Fisher-z."""
+    x = np.asarray(x, dtype=np.float64)
+    nch = x.shape[0]
+    iu = np.triu_indices(nch, 1)
+    edge = int(fs)                                       # trim filter/Hilbert edge effects
+    out = []
+    for lo, hi in AEC_BANDS:
+        sos = butter(4, [lo, hi], btype="bandpass", fs=fs, output="sos")
+        z = hilbert(sosfiltfilt(sos, x, axis=-1), axis=-1)
+        if z.shape[1] > 4 * edge:
+            z = z[:, edge:-edge]
+        amp = np.abs(z) + 1e-12
+        A = np.zeros((nch, nch))
+        for i in range(nch):
+            e_i = amp[i] - amp[i].mean()
+            e_o = np.abs(np.imag(z * (np.conj(z[i]) / amp[i])[None, :]))   # leakage-free envelopes
+            e_o = e_o - e_o.mean(axis=1, keepdims=True)
+            num = e_o @ e_i
+            den = np.sqrt((e_o ** 2).sum(axis=1) * (e_i ** 2).sum()) + 1e-20
+            A[i] = num / den
+        A = 0.5 * (A + A.T)
+        out.append(np.arctanh(np.clip(A[iu], -0.999, 0.999)))
+    return np.concatenate(out)
+
+
+def featurize(items, ctx):
+    feats, covs, wps, aecs, shps, cpxs = [], [], [], [], [], []
+    fs = ctx["fs"]
+    blocks = {c: ctx["load_eeg"](items, c) for c in ctx["conditions"]}
+    for i in range(len(items)):
+        f, cv, wp, ae, sh, cx = [], [], [], [], [], []
+        for c in ctx["conditions"]:
+            x = blocks[c][i]
+            if x is None:                      # missing condition -> fall back to eyes closed
+                x = blocks[ctx["conditions"][0]][i]
+            f.append(_bandpower(x, fs).ravel())
+            for lo, hi in COV_BANDS:
+                cv.append(_cov(x, fs, lo, hi).ravel())
+            wp.append(_wpli(x, fs))
+            ae.append(_aec(x, fs))
+            sh.append(_shape(x, fs))
+            cx.append(_complexity(x, fs))
+        feats.append(np.concatenate(f))
+        covs.append(np.concatenate(cv))
+        wps.append(np.concatenate(wp))
+        aecs.append(np.concatenate(ae))
+        shps.append(np.concatenate(sh))
+        cpxs.append(np.concatenate(cx))
+    F = np.concatenate([np.asarray(feats, dtype=np.float64), np.asarray(covs, dtype=np.float64),
+                        np.asarray(wps, dtype=np.float64), np.asarray(aecs, dtype=np.float64),
+                        np.asarray(shps, dtype=np.float64), np.asarray(cpxs, dtype=np.float64)],
+                       axis=1)
+    return F
+
+
+def _split(F, ctx):
+    F = np.asarray(F, dtype=np.float64)
+    nch = len(ctx["channels"])
+    ncond = len(ctx["conditions"])
+    npair = nch * (nch - 1) // 2
+    nbp = ncond * nch * len(BANDS)
+    ncov = ncond * len(COV_BANDS) * nch * nch
+    nwp = ncond * len(WPLI_BANDS) * npair
+    nae = ncond * len(AEC_BANDS) * npair
+    nsh = ncond * nch * N_SHAPE
+    bp = F[:, :nbp]
+    covs = F[:, nbp:nbp + ncov].reshape(len(F), ncond * len(COV_BANDS), nch, nch)
+    covs = 0.5 * (covs + covs.transpose(0, 1, 3, 2))
+    o = nbp + ncov
+    wp = F[:, o:o + nwp]
+    o += nwp
+    ae = F[:, o:o + nae]
+    o += nae
+    sh = F[:, o:o + nsh]
+    o += nsh
+    cx = F[:, o:]
+    return bp, covs, wp, ae, sh, cx
+
+
+def _inner_splits(y, ctx):
+    groups = ctx.get("groups_train")
+    if groups is None:
+        groups = np.arange(len(y))
+    groups = np.asarray(groups)
+    k = int(min(5, len(np.unique(groups))))
+    return list(GroupKFold(n_splits=k).split(np.zeros(len(y)), y, groups))
+
+
+def _fit_lr(X_tr, y, X_te, splits):
+    sc = StandardScaler().fit(X_tr)
+    Xs_tr, Xs_te = sc.transform(X_tr), sc.transform(X_te)
+    Xs_tr = np.nan_to_num(Xs_tr)
+    Xs_te = np.nan_to_num(Xs_te)
+    try:
+        cv = LogisticRegressionCV(Cs=CS, cv=splits, scoring="roc_auc", max_iter=5000).fit(Xs_tr, y)
+        C = float(cv.C_[0])
+    except Exception:
+        C = 0.1
+    clf = LogisticRegression(C=C, max_iter=5000).fit(Xs_tr, y)
+    return clf.predict_proba(Xs_te)[:, 1]
+
+
+def fit_predict(F_train, y_train, F_test, ctx):
+    y_train = np.asarray(y_train)
+    bp_tr, cov_tr, wp_tr, ae_tr, sh_tr, cx_tr = _split(F_train, ctx)
+    bp_te, cov_te, wp_te, ae_te, sh_te, cx_te = _split(F_test, ctx)
+    splits = _inner_splits(y_train, ctx)
+
+    p_bp = _fit_lr(bp_tr, y_train, bp_te, splits)
+
+    T_tr, T_te = [], []
+    for k in range(cov_tr.shape[1]):
+        ts = TangentSpace(metric="riemann").fit(cov_tr[:, k])
+        T_tr.append(ts.transform(cov_tr[:, k]))
+        T_te.append(ts.transform(cov_te[:, k]))
+    T_tr, T_te = np.concatenate(T_tr, axis=1), np.concatenate(T_te, axis=1)
+    p_ts = _fit_lr(T_tr, y_train, T_te, splits)
+
+    p_wp = _fit_lr(wp_tr, y_train, wp_te, splits)
+
+    p_ae = _fit_lr(ae_tr, y_train, ae_te, splits)
+
+    p_sh = _fit_lr(sh_tr, y_train, sh_te, splits)
+
+    p_cx = _fit_lr(cx_tr, y_train, cx_te, splits)
+
+    return (p_bp + p_ts + p_wp + p_ae + p_sh + p_cx) / 6.0
