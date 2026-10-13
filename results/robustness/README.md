@@ -62,5 +62,5 @@ single-patient use.
 
 ## Budget used (Modal)
 
-Main study ~$60; robustness analyses ~$60-75 (best-of-20 and repeat loops, Optuna search, audit,
-Eval scoring). LLM calls (~1,000 for best-of-20 and repeats) used the Claude plan, not Modal.
+Main study $60.0; robustness analyses $57.7 (best-of-20 and repeat loops, Optuna search, audit,
+Eval scoring); total $117.65 (Modal billing, app `jae`). LLM calls (~1,000 for best-of-20 and repeats) used the Claude plan, not Modal.
