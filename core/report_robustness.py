@@ -303,11 +303,16 @@ def shortcuts():
                 out[f"{arm}_pooled"] = roc_auc_score(rep["y"], rep["predictions"])
                 out[f"{arm}_within"] = within_site_auroc(rep["y"], rep["predictions"], sites)
             v2 = _fs(project, "runs", t, f"s{s}")
-            out["v2_within"] = v2["eval_champion"] if v2 else np.nan
+            # pooled IBD was redefined in v3 (stool only, person/twin groups): its current champion is
+            # scored on different Eval items, so it is not comparable with the v1 runs
+            out["v2_within"] = (v2["eval_champion"] if v2 else np.nan) if t != "ibd_pooled" else np.nan
             v1_rows.append(out)
             L.append(f"| {t} | {s} | {out['seed_pooled']:.3f} | {out['seed_within']:.3f} | {out['champion_pooled']:.3f} | "
                      f"{out['champion_within']:.3f} | {out['v2_within']:.3f} |")
-    L += ["", "## (c) Shortcut variables referenced in v1 champion code", ""]
+    L += ["", "nan = not comparable: pooled IBD was redefined in v3 (stool only, grouped by person / twin pair),",
+          "so its current champion is scored on different Eval items; the v1 IBD runs used the v2-era data,",
+          "which also contained biopsies and repeated samples (DISCLOSURES.md).",
+          "", "## (c) Shortcut variables referenced in v1 champion code", ""]
     for t, d in V1.items():
         for s in (1, 2, 3):
             f = ROOT / d / f"s{s}" / "solution.py"
@@ -490,7 +495,8 @@ def transfer(arms_df):
                   "| = loop champion on in-distribution Eval; dashed = chance. One row per split.", fontsize=8.5)
     ax.grid(True, axis="x", color=GRID, lw=0.8)
     ax.set_axisbelow(True)
-    ax.set_title("External datasets: performance does not carry over", loc="left", fontweight="bold")
+    ax.set_title("External datasets: the loop's in-distribution gains do not carry over", loc="left",
+                 fontweight="bold")
     save(fig, "fig11_transfer")
 
 

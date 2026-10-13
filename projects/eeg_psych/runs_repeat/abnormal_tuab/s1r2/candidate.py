@@ -1,22 +1,34 @@
 """Log relative power spectrum in 1-Hz bins (1-45 Hz) per channel plus log absolute power in
 5 classical bands per channel, from a median-averaged (artifact-robust) Welch PSD, plus
-log-Euclidean tangent-space band covariance matrices from a fine 9-band filterbank (low/high
-delta, low/high theta, low/high alpha, low/high beta, gamma; robust epoch averaging), plus
 temporal variability (quantile spreads) of 2-s epoch band power capturing intermittent slowing /
 paroxysmal events, plus time-domain waveform-shape features (Hjorth mobility/complexity,
 skewness, kurtosis of 2-s epochs) capturing sharp / epileptiform transients, plus side-agnostic
 focality features (|left-right| homologous band-power asymmetry and extreme per-channel deviation
 from the spatial median) capturing focal slowing / unilateral alpha loss, plus spectral
 parameterization (aperiodic 1/f exponent/offset, peak alpha frequency, alpha peak prominence,
-theta/delta bump on the 1/f-flattened spectrum) capturing posterior-rhythm slowing.
-Model: blend of standardized L2 logistic regression and LightGBM (nonlinear thresholds /
-interactions); C and blend weight chosen by inner grouped CV."""
+theta/delta bump on the 1/f-flattened spectrum) capturing posterior-rhythm slowing, plus
+band power / variability / waveform shape on the TCP bipolar ("double banana") montage that
+clinicians read: local field gradients sharpen focal slowing and focal sharp transients that the
+average reference smears, plus
+region-pooled spectra (frontal / central / temporal / posterior / global PSD averages): diffuse
+background slowing and the posterior dominant rhythm are judged over regions, and pooling the PSD
+over electrodes gives high-SNR spectra / peak-alpha estimates that trees cannot form by
+themselves, plus
+Riemannian tangent-space band covariance matrices from a fine 9-band filterbank (robust epoch
+averaging), projected at a per-band reference mean estimated (label-free) on the training fold:
+logm(M^-1/2 C M^-1/2) whitens away the volume-conduction structure shared by all recordings.
+Model: blend of L2 logistic regression on robustly scaled, soft-clipped features (median/IQR
+scaling + tanh squashing so artifact-laden outlier recordings cannot dominate the linear fit),
+an RBF-kernel SVM on the same scaled features (similarity-to-normal: abnormal recordings deviate
+from the normal cluster in many heterogeneous directions, which a distance-based kernel captures
+but a single hyperplane / axis-aligned trees do not), and LightGBM (nonlinear thresholds /
+interactions); C values, SVM Platt calibration and blend weights chosen by inner grouped CV."""
 import numpy as np
 from scipy.signal import butter, sosfiltfilt, welch, spectrogram
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import GroupKFold
-from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
 import lightgbm as lgb
 
 BINS = [(k, k + 1) for k in range(1, 45)]
@@ -25,11 +37,28 @@ ABS_BANDS = [(1, 4), (4, 8), (8, 13), (13, 30), (30, 45)]
 # from the normal dominant rhythm (8-10 / 10-13 Hz), low vs high beta, and fast/muscle topography
 COV_BANDS = [(1, 2), (2, 4), (4, 6), (6, 8), (8, 10), (10, 13), (13, 20), (20, 30), (30, 45)]
 CS = [0.001, 0.003, 0.01, 0.03, 0.1]
-WS = [0.0, 0.25, 0.5, 0.75, 1.0]   # weight on logistic regression in the blend
+SV_CS = [0.3, 1.0, 3.0]             # RBF-SVM box constraints
+# blend weights (logistic, svm, gbm) on a 0.25 simplex grid
+WGRID = [(a / 4.0, b / 4.0, (4 - a - b) / 4.0) for a in range(5) for b in range(5 - a)]
 N_SHAPE = 6
 N_PARAM = 7
+CLIP = 4.0                          # soft-clip level (in robust z units) for the linear model
 HOMOLOGOUS = [("Fp1", "Fp2"), ("F7", "F8"), ("F3", "F4"), ("T3|T7", "T4|T8"), ("C3", "C4"),
               ("T5|P7", "T6|P8"), ("P3", "P4"), ("O1", "O2")]
+# TCP (temporal central parasagittal) bipolar montage used for clinical reading at TUH
+# (ear-electrode derivations dropped; midline chain added)
+TCP = [("Fp1", "F7"), ("F7", "T3|T7"), ("T3|T7", "T5|P7"), ("T5|P7", "O1"),
+       ("Fp2", "F8"), ("F8", "T4|T8"), ("T4|T8", "T6|P8"), ("T6|P8", "O2"),
+       ("T3|T7", "C3"), ("C3", "Cz"), ("Cz", "C4"), ("C4", "T4|T8"),
+       ("Fp1", "F3"), ("F3", "C3"), ("C3", "P3"), ("P3", "O1"),
+       ("Fp2", "F4"), ("F4", "C4"), ("C4", "P4"), ("P4", "O2"),
+       ("Fz", "Cz"), ("Cz", "Pz")]
+# scalp regions over which background activity is clinically judged (empty list = all channels)
+REGIONS = [["Fp1", "Fp2", "F3", "F4", "F7", "F8", "Fz"],
+           ["C3", "C4", "Cz"],
+           ["T3|T7", "T4|T8", "T5|P7", "T6|P8"],
+           ["P3", "P4", "Pz", "O1", "O2"],
+           []]
 
 
 def _spectrum(x, fs):
@@ -45,21 +74,29 @@ def _spectrum(x, fs):
     return np.concatenate([rel.ravel(), ab.ravel()])
 
 
-def _param(x, fs):
-    # spectral parameterization: a slowed posterior dominant rhythm (< 8 Hz) is a defining
-    # criterion of an abnormal routine EEG. Peak position is an argmax / centroid of the
-    # 1/f-flattened spectrum, which neither a linear model on 1-Hz bins nor sparse trees can form.
-    n_ch, n_t = x.shape
-    nper = int(min(4 * fs, n_t))
-    f, p = welch(x, fs=fs, nperseg=nper, axis=-1, average="median")
+def _band_power(x, fs):
+    # compact band description (log absolute + log relative) from the median Welch PSD
+    f, p = welch(x, fs=fs, nperseg=int(2 * fs), axis=-1, average="median")
+    df = f[1] - f[0]
+    tot = p[:, (f >= 1) & (f < 45)].sum(axis=1) + 1e-12
+    bp = np.stack([p[:, (f >= a) & (f < b)].sum(axis=1) for a, b in ABS_BANDS], axis=1)
+    ab = np.log(bp * df + 1e-6)
+    rel = np.log(bp[:, :4] / tot[:, None] + 1e-12)
+    return np.concatenate([ab, rel], axis=1).ravel()
+
+
+def _param_feats(f, p):
+    # per-row spectral parameterization of a PSD (rows x freqs) -> (rows, N_PARAM)
+    n_ch = p.shape[0]
     if len(f) < 8:
-        return np.zeros(n_ch * N_PARAM + 3)
+        return np.zeros((n_ch, N_PARAM))
     lf = np.log10(np.maximum(f, 1e-6))
     lp = np.log10(p + 1e-12)
     m = (f >= 2) & (f <= 40) & ~((f >= 6) & (f <= 14))
     if m.sum() < 3:
-        return np.zeros(n_ch * N_PARAM + 3)
+        return np.zeros((n_ch, N_PARAM))
     slope, icpt = np.polyfit(lf[m], lp[:, m].T, 1)                    # (ch,), (ch,)
+    slope, icpt = np.atleast_1d(slope), np.atleast_1d(icpt)
     resid = lp - (slope[:, None] * lf[None] + icpt[:, None])
     # light smoothing of the flattened spectrum over ~0.75 Hz
     k = np.ones(3) / 3.0
@@ -76,20 +113,64 @@ def _param(x, fs):
     area = ws * df
     t = (f >= 2) & (f < 6)
     slow_h = resid[:, t].max(axis=1)
-    feats = np.stack([-slope, icpt, paf, peak_h, cog, area, slow_h], axis=1)
-    summ = np.array([np.median(cog), np.max(cog), np.median(-slope)])
+    return np.stack([-slope, icpt, paf, peak_h, cog, area, slow_h], axis=1)
+
+
+def _param(x, fs):
+    # spectral parameterization: a slowed posterior dominant rhythm (< 8 Hz) is a defining
+    # criterion of an abnormal routine EEG. Peak position is an argmax / centroid of the
+    # 1/f-flattened spectrum, which neither a linear model on 1-Hz bins nor sparse trees can form.
+    n_ch, n_t = x.shape
+    nper = int(min(4 * fs, n_t))
+    f, p = welch(x, fs=fs, nperseg=nper, axis=-1, average="median")
+    feats = _param_feats(f, p)
+    cog = feats[:, 4]
+    summ = np.array([np.median(cog), np.max(cog), np.median(feats[:, 0])])
+    if not np.any(feats):
+        summ = np.zeros(3)
     return np.concatenate([feats.ravel(), summ])
 
 
-def _resolve_pairs(channels):
+def _regional(x, fs, regions):
+    # background slowing and the posterior dominant rhythm are judged over regions: pooling the
+    # median PSD over a region's electrodes averages out single-electrode artifacts, giving
+    # high-SNR fine spectra and peak estimates (trees cannot average columns themselves)
+    n_ch, n_t = x.shape
+    nper = int(min(4 * fs, n_t))
+    f, p = welch(x, fs=fs, nperseg=nper, axis=-1, average="median")
+    df = f[1] - f[0] if len(f) > 1 else 1.0
+    out = []
+    for r in regions:
+        pr = p[r].mean(axis=0, keepdims=True)                         # (1, f)
+        tot = pr[:, (f >= 1) & (f < 45)].sum(axis=1, keepdims=True) + 1e-12
+        rel = np.log(np.stack([pr[:, (f >= a) & (f < b)].sum(axis=1) for a, b in BINS], axis=1) / tot + 1e-12)
+        ab = np.log(np.stack([pr[:, (f >= a) & (f < b)].sum(axis=1) * df for a, b in ABS_BANDS], axis=1) + 1e-6)
+        out += [rel.ravel(), ab.ravel(), _param_feats(f, pr).ravel()]
+    return np.concatenate(out)
+
+
+def _resolve_pairs(channels, pair_list):
     idx = {c.lower(): i for i, c in enumerate(channels)}
     pairs = []
-    for left, right in HOMOLOGOUS:
+    for left, right in pair_list:
         li = next((idx[n.lower()] for n in left.split("|") if n.lower() in idx), None)
         ri = next((idx[n.lower()] for n in right.split("|") if n.lower() in idx), None)
         if li is not None and ri is not None:
             pairs.append((li, ri))
     return pairs
+
+
+def _resolve_regions(channels, regions):
+    idx = {c.lower(): i for i, c in enumerate(channels)}
+    out = []
+    for names in regions:
+        r = []
+        for name in names:
+            j = next((idx[n.lower()] for n in name.split("|") if n.lower() in idx), None)
+            if j is not None:
+                r.append(j)
+        out.append(np.array(r if r else list(range(len(channels)))))
+    return out
 
 
 def _focality(x, fs, pairs):
@@ -167,21 +248,26 @@ def _shape(x, fs):
     return np.stack(feats, axis=1).ravel()
 
 
-def _logm_upper(C):
-    w, V = np.linalg.eigh(C)
-    L = (V * np.log(np.maximum(w, 1e-10))) @ V.T
-    n = L.shape[0]
-    iu = np.triu_indices(n)
-    scale = np.where(iu[0] == iu[1], 1.0, np.sqrt(2.0))
-    return L[iu] * scale
+def _bipolar(x, fs, bip):
+    # clinical reading montage: differences of neighbouring electrodes cancel diffuse / common
+    # activity and emphasise local gradients, where focal slowing and focal sharp waves
+    # (phase reversals) stand out against the background
+    if not bip:
+        return np.zeros(0)
+    a = np.array([i for i, _ in bip])
+    b = np.array([j for _, j in bip])
+    B = x[a] - x[b]
+    return np.concatenate([_band_power(B, fs), _variability(B, fs), _shape(B, fs)])
 
 
 def _covariances(x, fs):
     # spatial covariance per band: captures focal / lateralized slowing and altered spatial
-    # coherence that per-channel spectra cannot see; mapped to log-Euclidean tangent space
+    # coherence that per-channel spectra cannot see. Returned raw (upper triangle); the
+    # Riemannian tangent projection at a training-fold reference happens in fit_predict.
     n_ch, n_t = x.shape
     ep = int(2 * fs)
     n_ep = max(n_t // ep, 1)
+    iu = np.triu_indices(n_ch)
     out = []
     for lo, hi in COV_BANDS:
         hi = min(hi, 0.45 * fs)
@@ -203,37 +289,150 @@ def _covariances(x, fs):
         C = covs[keep].mean(axis=0)
         # shrinkage: average reference makes C rank-deficient
         C = 0.95 * C + 0.05 * np.trace(C) / n_ch * np.eye(n_ch)
-        out.append(_logm_upper(C))
+        out.append(C[iu])
     return np.concatenate(out)
 
 
 def featurize(items, ctx):
     feats = []
     fs = ctx["fs"]
-    pairs = _resolve_pairs(list(ctx["channels"]))
+    channels = list(ctx["channels"])
+    pairs = _resolve_pairs(channels, HOMOLOGOUS)
+    bip = _resolve_pairs(channels, TCP)
+    regions = _resolve_regions(channels, REGIONS)
     blocks = {c: ctx["load_eeg"](items, c) for c in ctx["conditions"]}
     for i in range(len(items)):
-        f = []
+        f, cov = [], []
         for c in ctx["conditions"]:
             x = blocks[c][i]
             if x is None:                      # missing condition -> fall back to first condition
                 x = blocks[ctx["conditions"][0]][i]
             x = np.asarray(x, dtype=np.float64)
             f.append(_spectrum(x, fs))
-            f.append(_covariances(x, fs))
             f.append(_variability(x, fs))
             f.append(_shape(x, fs))
             f.append(_focality(x, fs, pairs))
             f.append(_param(x, fs))
-        feats.append(np.concatenate(f))
+            f.append(_bipolar(x, fs, bip))
+            f.append(_regional(x, fs, regions))
+            cov.append(_covariances(x, fs))
+        # raw covariance blocks go last so fit_predict can slice them off
+        feats.append(np.concatenate(f + cov))
     F = np.asarray(feats, dtype=np.float32)
     return np.nan_to_num(F, nan=0.0, posinf=0.0, neginf=0.0)
 
 
-def _fit(X, y, C):
-    sc = StandardScaler().fit(X)
-    clf = LogisticRegression(C=C, max_iter=5000).fit(sc.transform(X), y)
-    return sc, clf
+def _sym_fn(M, fn):
+    w, V = np.linalg.eigh(M)
+    return (V * fn(np.maximum(w, 1e-10))[..., None, :]) @ np.swapaxes(V, -1, -2)
+
+
+def _tangent(V, n_ch, n_mats, P=None):
+    # Riemannian tangent space at a per-band reference mean (log-Euclidean mean of the training
+    # fold, label-free): whitening by M^-1/2 removes the volume-conduction structure common to all
+    # recordings so features express each recording's deviation from the typical one
+    n = V.shape[0]
+    iu = np.triu_indices(n_ch)
+    V = V.reshape(n, n_mats, -1)
+    C = np.zeros((n, n_mats, n_ch, n_ch))
+    C[..., iu[0], iu[1]] = V
+    C[..., iu[1], iu[0]] = V
+    tr = np.trace(C, axis1=-2, axis2=-1)[..., None, None]
+    # guard against degenerate (e.g. all-zero) matrices
+    C = C + 1e-6 * (tr / n_ch + 1e-6) * np.eye(n_ch)
+    if P is None:
+        Lm = _sym_fn(C, np.log).mean(axis=0)                          # (n_mats, ch, ch)
+        M = _sym_fn(Lm, np.exp)
+        P = _sym_fn(M, lambda w: 1.0 / np.sqrt(w))
+    W = P[None] @ C @ P[None]
+    W = 0.5 * (W + np.swapaxes(W, -1, -2))
+    L = _sym_fn(W, np.log)
+    scale = np.where(iu[0] == iu[1], 1.0, np.sqrt(2.0))
+    T = L[..., iu[0], iu[1]] * scale
+    return T.reshape(n, -1), P
+
+
+def fit_predict(F_train, y_train, F_test, ctx):
+    X, y = np.asarray(F_train, dtype=np.float64), np.asarray(y_train)
+    Xt = np.asarray(F_test, dtype=np.float64)
+    n_ch = len(ctx["channels"])
+    n_mats = len(ctx["conditions"]) * len(COV_BANDS)
+    k = n_mats * n_ch * (n_ch + 1) // 2
+    T_tr, P = _tangent(X[:, -k:], n_ch, n_mats)
+    T_te, _ = _tangent(Xt[:, -k:], n_ch, n_mats, P)
+    X = np.nan_to_num(np.hstack([X[:, :-k], T_tr]))
+    Xt = np.nan_to_num(np.hstack([Xt[:, :-k], T_te]))
+    groups = ctx.get("groups_train")
+    if groups is None:
+        groups = np.arange(len(y))
+    gkf = GroupKFold(n_splits=5)
+    folds = list(gkf.split(X, y, groups))
+    scores = np.zeros(len(CS))
+    sv_scores = np.zeros(len(SV_CS))
+    p_lr = np.zeros((len(CS), len(y)))
+    d_sv = np.zeros((len(SV_CS), len(y)))
+    p_gb = np.zeros(len(y))
+    for tr, va in folds:
+        sc = _RobustClipScaler().fit(X[tr])
+        Ztr, Zva = sc.transform(X[tr]), sc.transform(X[va])
+        for j, C in enumerate(CS):
+            clf = LogisticRegression(C=C, max_iter=5000).fit(Ztr, y[tr])
+            p_lr[j, va] = clf.predict_proba(Zva)[:, 1]
+            scores[j] += roc_auc_score(y[va], p_lr[j, va])
+        for j, C in enumerate(SV_CS):
+            d_sv[j, va] = _fit_svm(Ztr, y[tr], C).decision_function(Zva)
+            sv_scores[j] += roc_auc_score(y[va], d_sv[j, va])
+        p_gb[va] = _fit_gbm(X[tr], y[tr]).predict_proba(X[va])[:, 1]
+    jb = int(np.argmax(scores))
+    best_C = CS[jb]
+    js = int(np.argmax(sv_scores))
+    best_Cs = SV_CS[js]
+    # Platt calibration of the SVM margin on out-of-fold decision values, so it can be
+    # averaged with the probabilistic models on a common scale
+    platt = LogisticRegression(C=1e4, max_iter=1000).fit(d_sv[js][:, None], y)
+    p_sv = platt.predict_proba(d_sv[js][:, None])[:, 1]
+    # blend weights chosen by mean inner-fold AUC of the probability average
+    wscores = np.zeros(len(WGRID))
+    for tr, va in folds:
+        for kk, (a, b, c) in enumerate(WGRID):
+            wscores[kk] += roc_auc_score(y[va], a * p_lr[jb, va] + b * p_sv[va] + c * p_gb[va])
+    a, b, c = WGRID[int(np.argmax(wscores))]
+    pred = np.zeros(len(Xt))
+    sc = _RobustClipScaler().fit(X)
+    Z, Zt = sc.transform(X), sc.transform(Xt)
+    if a > 0:
+        clf = LogisticRegression(C=best_C, max_iter=5000).fit(Z, y)
+        pred += a * clf.predict_proba(Zt)[:, 1]
+    if b > 0:
+        dt = _fit_svm(Z, y, best_Cs).decision_function(Zt)
+        pred += b * platt.predict_proba(dt[:, None])[:, 1]
+    if c > 0:
+        pred += c * _fit_gbm(X, y).predict_proba(Xt)[:, 1]
+    return pred
+
+
+class _RobustClipScaler:
+    # median / IQR scaling followed by smooth clipping c*tanh(z/c): unprocessed clinical
+    # recordings (flat or saturated channels, electrode pops) yield heavy-tailed features whose
+    # few extreme recordings would otherwise dominate the L2 logistic fit
+    def fit(self, X):
+        self.med = np.median(X, axis=0)
+        q25, q75 = np.percentile(X, [25, 75], axis=0)
+        s = (q75 - q25) / 1.349
+        sd = X.std(axis=0)
+        s = np.where(s > 1e-8, s, sd)
+        self.scale = np.where(s > 1e-8, s, 1.0)
+        return self
+
+    def transform(self, X):
+        z = (X - self.med) / self.scale
+        return CLIP * np.tanh(z / CLIP)
+
+
+def _fit_svm(Z, y, C):
+    # RBF kernel on the soft-clipped robust z-scores: scores a recording by its similarity to
+    # normal vs abnormal training recordings across all feature families at once
+    return SVC(C=C, kernel="rbf", gamma="scale", cache_size=1000).fit(Z, y)
 
 
 def _fit_gbm(X, y):
@@ -245,35 +444,3 @@ def _fit_gbm(X, y):
         random_state=0, n_jobs=4, verbose=-1,
     )
     return gbm.fit(X, y)
-
-
-def fit_predict(F_train, y_train, F_test, ctx):
-    X, y = np.asarray(F_train, dtype=np.float64), np.asarray(y_train)
-    Xt = np.asarray(F_test, dtype=np.float64)
-    groups = ctx.get("groups_train")
-    if groups is None:
-        groups = np.arange(len(y))
-    gkf = GroupKFold(n_splits=5)
-    folds = list(gkf.split(X, y, groups))
-    scores = np.zeros(len(CS))
-    p_lr = np.zeros((len(CS), len(y)))
-    p_gb = np.zeros(len(y))
-    for tr, va in folds:
-        for j, C in enumerate(CS):
-            sc, clf = _fit(X[tr], y[tr], C)
-            p_lr[j, va] = clf.predict_proba(sc.transform(X[va]))[:, 1]
-            scores[j] += roc_auc_score(y[va], p_lr[j, va])
-        p_gb[va] = _fit_gbm(X[tr], y[tr]).predict_proba(X[va])[:, 1]
-    jb = int(np.argmax(scores))
-    best_C = CS[jb]
-    # blend weight chosen by mean inner-fold AUC of the probability average
-    wscores = np.zeros(len(WS))
-    for tr, va in folds:
-        for k, w in enumerate(WS):
-            wscores[k] += roc_auc_score(y[va], w * p_lr[jb, va] + (1 - w) * p_gb[va])
-    w = WS[int(np.argmax(wscores))]
-    sc, clf = _fit(X, y, best_C)
-    pred = w * clf.predict_proba(sc.transform(Xt))[:, 1]
-    if w < 1.0:
-        pred = pred + (1 - w) * _fit_gbm(X, y).predict_proba(Xt)[:, 1]
-    return pred

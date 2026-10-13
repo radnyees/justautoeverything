@@ -9,6 +9,7 @@ Eval sets).
 |---|---|---|---|---|
 | mdd_tdbrain | +0.113 / +0.116 / +0.096 | 0.011 | 0.043 | 0.912 / 0.912 / 0.930 |
 | sz_aseeg | +0.045 / +0.038 / +0.013 | 0.017 | 0.084 | 0.906 / 0.918 / 0.884 |
+| abnormal_tuab | +0.091 / +0.086 / +0.080 | 0.005 | 0.018 | 0.938 / 0.933 / 0.933 |
 | helsinki | +0.082 / +0.055 / +0.051 | 0.017 | 0.021 | 0.874 / 0.804 / 0.895 |
 | crc_baxter | -0.038 / -0.032 / +0.003 | 0.023 | 0.035 | 0.742 / 0.745 / 0.764 |
 | ibd_pooled | -0.041 / -0.050 / -0.015 | 0.018 | 0.071 | 0.820 / 0.823 / 0.795 |
@@ -24,6 +25,9 @@ Champion feature families per repeat (kept rounds):
 * sz_aseeg s1: 6 kept / 20 rounds -- aperiodic/1-f-slope, artifact-handling, complexity/fractal-dimension, covariance/riemannian, linear-model, microstates, 
 * sz_aseeg s1r2: 9 kept / 20 rounds -- aperiodic/1-f-slope, artifact-handling, coherence/connectivity, covariance/riemannian, linear-model, microstates, peak-a
 * sz_aseeg s1r3: 7 kept / 20 rounds -- coherence/connectivity, complexity/fractal-dimension, covariance/riemannian, ensemble/stacking, entropy, linear-model, m
+* abnormal_tuab s1: 11 kept / 20 rounds -- SVM/kernel, absolute-band-power, alpha-asymmetry, artifact-handling, covariance/riemannian, ensemble/stacking, gradient-
+* abnormal_tuab s1r2: 14 kept / 20 rounds -- absolute-band-power, alpha-asymmetry, aperiodic/1-f-slope, artifact-handling, coherence/connectivity, covariance/riemann
+* abnormal_tuab s1r3: 10 kept / 20 rounds -- SVM/kernel, absolute-band-power, artifact-handling, covariance/riemannian, ensemble/stacking, gradient-boosting, linear-
 * helsinki s1: 11 kept / 20 rounds -- artifact-handling, context-window/multi-scale, gradient-boosting, inter-channel/spatial-spread, line-length/amplitude, p
 * helsinki s1r2: 6 kept / 20 rounds -- artifact-handling, context-window/multi-scale, gradient-boosting, inter-channel/spatial-spread, line-length/amplitude, p
 * helsinki s1r3: 10 kept / 20 rounds -- artifact-handling, context-window/multi-scale, filtering/montage(bipolar), gradient-boosting, inter-channel/spatial-spre

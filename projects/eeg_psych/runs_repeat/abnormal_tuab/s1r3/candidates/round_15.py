@@ -1,15 +1,14 @@
 """Fine-resolution log relative spectrum (2-Hz bins, 1-45 Hz) + log total power per channel, plus
 band covariances (delta/theta/alpha/beta, trace-normalized, shrunk) projected into the Riemannian
-tangent space at the TRAINING-FOLD geometric mean (affine-invariant metric, fit inside fit_predict).
+tangent space at the TRAINING-FOLD geometric mean (affine-invariant metric, fit inside fit_predict),
+plus per-band Riemannian distances to the class geometric means (normal / abnormal; out-of-fold for
+training rows) encoding global deviation from the normal spatial structure.
 Both are computed over artifact-screened 10-s epochs: epochs that clip or have outlying broadband
 amplitude (robust z > 3) are rejected; the spectrum is the median of epoch PSDs and the covariance
-is the mean of epoch covariances. Normative-deviation features: per feature block (spectrum, each
-band's tangent vectors, all features) a PCA model of NORMAL training recordings gives a log
-Mahalanobis distance (top-k subspace) and a log residual distance; training rows are scored
-out-of-fold (grouped) so normals are never scored by a model that saw them.
-Model: rank-average of a standardized L2 logistic regression (C by grouped inner CV), a regularized
-LightGBM that captures non-additive 'any abnormal sign' structure, and an RBF-kernel SVM (C by
-grouped inner CV) capturing smooth multivariate deviation from the normal-EEG feature manifold."""
+is the mean of epoch covariances. Model: rank-average of a standardized L2 logistic regression
+(C by grouped inner CV), a regularized LightGBM that captures non-additive 'any abnormal sign'
+structure, and an RBF-kernel SVM (C by grouped inner CV) capturing smooth multivariate deviation
+from the normal-EEG feature manifold."""
 import numpy as np
 from scipy.signal import welch, butter, sosfiltfilt
 from scipy.stats import rankdata
@@ -19,6 +18,7 @@ from sklearn.model_selection import GroupKFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from pyriemann.tangentspace import TangentSpace
+from pyriemann.utils.mean import mean_riemann
 import lightgbm as lgb
 
 EDGES = np.arange(1, 46, 2)          # 1,3,...,45 -> 22 bins of 2 Hz
@@ -29,7 +29,6 @@ EPOCH_SEC = 10.0
 CLIP_UV = 790.0
 Z_MAX = 3.0
 SVM_CS = [0.3, 1.0, 3.0]
-NORM_K = 20
 
 
 def _epoch_view(x, L):
@@ -125,20 +124,44 @@ def _to_mats(V, n):
     return M
 
 
-def _tangent(F_train, F_test, n_cond):
-    """Replace raw covariance blocks with tangent vectors at the training geometric mean.
-    Also returns the column slices of each feature block (spectrum, each band)."""
+def _riem_dist(Cs, M):
+    """Affine-invariant Riemannian distance of each matrix in Cs to reference M."""
+    w, V = np.linalg.eigh(M)
+    W = (V * (1.0 / np.sqrt(np.clip(w, 1e-12, None)))) @ V.T
+    A = np.einsum("ij,njk,kl->nil", W, Cs, W)
+    A = 0.5 * (A + A.transpose(0, 2, 1))
+    ev = np.clip(np.linalg.eigvalsh(A), 1e-12, None)
+    return np.sqrt((np.log(ev) ** 2).sum(axis=1))
+
+
+def _class_dists(Ctr, y, Cte, splits):
+    """Distances to normal / abnormal geometric means; out-of-fold for the training rows."""
+    Dtr = np.zeros((len(Ctr), 2))
+    for tr, va in splits:
+        for k in (0, 1):
+            sel = Ctr[tr][y[tr] == k]
+            M = mean_riemann(sel) if len(sel) > 0 else mean_riemann(Ctr[tr])
+            Dtr[va, k] = _riem_dist(Ctr[va], M)
+    Dte = np.zeros((len(Cte), 2))
+    for k in (0, 1):
+        sel = Ctr[y == k]
+        M = mean_riemann(sel) if len(sel) > 0 else mean_riemann(Ctr)
+        Dte[:, k] = _riem_dist(Cte, M)
+    add = lambda D: np.column_stack([D, D[:, 0] - D[:, 1]])
+    return add(Dtr), add(Dte)
+
+
+def _tangent(F_train, F_test, n_cond, y, splits):
+    """Replace raw covariance blocks with tangent vectors at the training geometric mean,
+    and append per-band distances to the class geometric means."""
     n = _n_channels(F_train.shape[1], n_cond)
     per = n * N_SPEC + len(COV_BANDS) * n * (n + 1) // 2
     m = n * (n + 1) // 2
-    tr_parts, te_parts, blocks = [], [], []
-    col = 0
+    tr_parts, te_parts = [], []
     for c in range(n_cond):
         base = c * per
         tr_parts.append(F_train[:, base:base + n * N_SPEC])
         te_parts.append(F_test[:, base:base + n * N_SPEC])
-        blocks.append(slice(col, col + n * N_SPEC))
-        col += n * N_SPEC
         for b in range(len(COV_BANDS)):
             s = base + n * N_SPEC + b * m
             Ctr = _to_mats(F_train[:, s:s + m], n)
@@ -146,43 +169,12 @@ def _tangent(F_train, F_test, n_cond):
             ts = TangentSpace(metric="riemann").fit(Ctr)
             tr_parts.append(ts.transform(Ctr))
             te_parts.append(ts.transform(Cte))
-            w = tr_parts[-1].shape[1]
-            blocks.append(slice(col, col + w))
-            col += w
-    blocks.append(slice(0, col))
+            dtr, dte = _class_dists(Ctr, y, Cte, splits)
+            tr_parts.append(dtr)
+            te_parts.append(dte)
     Xtr = np.nan_to_num(np.concatenate(tr_parts, axis=1))
     Xte = np.nan_to_num(np.concatenate(te_parts, axis=1))
-    return Xtr, Xte, blocks
-
-
-def _norm_fit(Z):
-    mu = Z.mean(axis=0)
-    _, s, Vt = np.linalg.svd(Z - mu, full_matrices=False)
-    k = max(1, min(NORM_K, len(s) - 1))
-    sd = s[:k] / np.sqrt(max(len(Z) - 1, 1)) + 1e-9
-    return mu, Vt[:k], sd
-
-
-def _norm_apply(model, Z):
-    mu, V, sd = model
-    D = Z - mu
-    P = D @ V.T
-    maha = np.mean((P / sd) ** 2, axis=1)
-    res = np.mean((D - P @ V) ** 2, axis=1)
-    return np.stack([np.log(maha + 1e-9), np.log(res + 1e-9)], axis=1)
-
-
-def _normative(Xtr, y, Xte, splits, blocks):
-    """Deviation-from-normal features per block; training rows scored out-of-fold."""
-    Ntr = np.zeros((len(Xtr), 2 * len(blocks)))
-    Nte = np.zeros((len(Xte), 2 * len(blocks)))
-    for j, sl in enumerate(blocks):
-        Ztr, Zte = Xtr[:, sl], Xte[:, sl]
-        for tr, va in splits:
-            nm = tr[y[tr] == 0]
-            Ntr[va, 2 * j:2 * j + 2] = _norm_apply(_norm_fit(Ztr[nm]), Ztr[va])
-        Nte[:, 2 * j:2 * j + 2] = _norm_apply(_norm_fit(Ztr[y == 0]), Zte)
-    return np.nan_to_num(Ntr), np.nan_to_num(Nte)
+    return Xtr, Xte
 
 
 def _rank01(p):
@@ -210,23 +202,14 @@ def _fit_svm(Xtr, y, Xte, splits):
 def fit_predict(F_train, y_train, F_test, ctx):
     F_train = np.asarray(F_train, dtype=np.float64)
     F_test = np.asarray(F_test, dtype=np.float64)
-    F_train, F_test, blocks = _tangent(F_train, F_test, len(ctx["conditions"]))
-    sc = StandardScaler().fit(F_train)
-    Xtr, Xte = sc.transform(F_train), sc.transform(F_test)
     y = np.asarray(y_train).astype(int)
     groups = ctx.get("groups_train")
     if groups is None:
         groups = np.arange(len(y))
-    splits = list(GroupKFold(n_splits=5).split(Xtr, y, groups))
-
-    Ntr, Nte = _normative(np.clip(Xtr, -6, 6), y, np.clip(Xte, -6, 6), splits, blocks)
-    sc_n = StandardScaler().fit(Ntr)
-    Ntr_s, Nte_s = sc_n.transform(Ntr), sc_n.transform(Nte)
-    Xtr = np.concatenate([Xtr, Ntr_s], axis=1)
-    Xte = np.concatenate([Xte, Nte_s], axis=1)
-    G_train = np.concatenate([F_train, Ntr], axis=1)
-    G_test = np.concatenate([F_test, Nte], axis=1)
-
+    splits = list(GroupKFold(n_splits=5).split(F_train, y, groups))
+    F_train, F_test = _tangent(F_train, F_test, len(ctx["conditions"]), y, splits)
+    sc = StandardScaler().fit(F_train)
+    Xtr, Xte = sc.transform(F_train), sc.transform(F_test)
     clf = LogisticRegressionCV(Cs=[0.0003, 0.001, 0.003, 0.01, 0.03, 0.1], cv=splits,
                                scoring="roc_auc", max_iter=5000, n_jobs=1).fit(Xtr, y)
     p_lr = clf.predict_proba(Xte)[:, 1]
@@ -235,8 +218,8 @@ def fit_predict(F_train, y_train, F_test, ctx):
                              min_child_samples=20, subsample=0.8, subsample_freq=1,
                              colsample_bytree=0.3, reg_lambda=1.0, random_state=0,
                              deterministic=True, force_row_wise=True, n_jobs=4, verbose=-1)
-    gbm.fit(G_train, y)
-    p_gb = gbm.predict_proba(G_test)[:, 1]
+    gbm.fit(F_train, y)
+    p_gb = gbm.predict_proba(F_test)[:, 1]
 
     Xtr_c = np.clip(Xtr, -6, 6)
     Xte_c = np.clip(Xte, -6, 6)

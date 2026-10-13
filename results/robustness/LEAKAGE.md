@@ -70,8 +70,7 @@ Largest absolute difference from the reported score (Eval and external sets): re
 
 ## Static scan of all saved solution code
 
-1995 files (champions, best-of-20 and repeat candidates, archived runs). Lines touching files, network, subprocesses or the harness: 74; outside the resources a task provides (`ctx['genesets_dir']`, directly or via a helper function): **1**.
-* `projects/microbiome/runs/ibd_pooled/s2/candidates/round_15.py:4`: `grouped inner CV scored as WITHIN-study AUROC (matching the harness metric)`
+2010 files (champions, best-of-20 and repeat candidates, archived runs). Lines touching files, network, subprocesses or the harness: 73; outside the resources a task provides (`ctx['genesets_dir']`, directly or via a helper function): **0**.
 
 Limits: rejected candidates of the 36 main loops were not saved (only champions and the
 round history), so they are covered only through their champions; the loops' scoring

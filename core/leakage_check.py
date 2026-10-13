@@ -64,14 +64,32 @@ def static_scan():
                    set(ROOT.glob("projects/*/archive/**/solution.py")))
     hits = []
     for f in files:
+        doc = _docstring_lines(f.read_text())
         for n, line in enumerate(f.read_text().splitlines(), 1):
             s = line.strip()
-            if s.startswith("#") or not ACCESS.search(s):
+            if n in doc or s.startswith("#") or not ACCESS.search(s):
                 continue
             hits.append({"file": str(f.relative_to(ROOT)), "line": n, "code": s[:140],
                          "allowed": bool(ALLOWED.search(s)) or "genesets_dir" in _context(f, n)
                          or _helper_uses_genesets(f, n)})
     return files, hits
+
+
+def _docstring_lines(src):
+    """Line numbers inside module / class / function docstrings (text, not code)."""
+    import ast
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return set()
+    out = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.body:
+            first = node.body[0]
+            if isinstance(first, ast.Expr) and isinstance(getattr(first, "value", None), ast.Constant) \
+                    and isinstance(first.value.value, str):
+                out.update(range(first.lineno, first.end_lineno + 1))
+    return out
 
 
 def _helper_uses_genesets(f, n):

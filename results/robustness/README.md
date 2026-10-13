@@ -44,7 +44,7 @@ Significant only conditionally on the fitted models (subject bootstrap): crc_bax
 
 ## Run-to-run variance
 
-8 tasks with 3 independent loops on split 1: run-to-run SD of the Eval gain 0.011-0.044 (median 0.017); split-to-split SD 0.002-0.084 (median 0.043); run-to-run < split-to-split on 7/8 tasks.
+9 tasks with 3 independent loops on split 1: run-to-run SD of the Eval gain 0.005-0.044 (median 0.017); split-to-split SD 0.002-0.084 (median 0.042); run-to-run < split-to-split on 8/9 tasks.
 
 ## Age/sex confounds (mean over splits)
 

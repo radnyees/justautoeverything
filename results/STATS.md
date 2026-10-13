@@ -34,14 +34,14 @@ keep-if-better-on-Dev rule, so every arm is a pipeline chosen without Eval data.
 | mdd_tdbrain | +0.104 | 0.871 0.792 0.887 | 0.984 0.933 0.944 | +0.044 .. +0.170 | 0.0010 | 0.0120 | 0.0010 | 0.0120 | 0.0530 |
 | adhd_tdbrain | +0.137 | 0.838 0.833 0.685 | 0.869 1.000 0.897 | +0.025 .. +0.259 | 0.0040 | 0.0360 | 0.0010 | 0.0120 | 0.1294 |
 | sz_aseeg [5] | +0.122 | 0.699 0.583 0.750 | 0.744 0.795 0.859 | -0.008 .. +0.259 | 0.0640 | 0.4798 | 0.0330 | 0.1649 | 0.1288 |
-| abnormal_tuab | +0.071 | 0.840 0.829 0.872 | 0.931 0.899 0.926 | +0.050 .. +0.093 | 0.0010 | 0.0120 | 0.0010 | 0.0120 | 0.0213 |
+| abnormal_tuab | +0.071 | 0.840 0.829 0.872 | 0.931 0.899 0.926 | +0.051 .. +0.091 | 0.0010 | 0.0120 | 0.0010 | 0.0120 | 0.0213 |
 | helsinki | +0.072 | 0.852 0.848 0.780 | 0.934 0.896 0.867 | +0.033 .. +0.106 | 0.0010 | 0.0120 | 0.0010 | 0.0120 | 0.0276 |
 
 [1] ibd_pooled: split gains change sign (-0.041 +0.093 -0.011).
 [2] csf_ad: split gains change sign (-0.026 +0.039 +0.110).
 [3] autism_abide: split gains change sign (-0.028 +0.027 -0.005).
-[4] adhd_adhd200: seed Eval on split 1 was 0.453 (near/below chance); split gains +0.264 +0.001 +0.015, so the mean gain leans on that split. adhd_adhd200: age + sex alone give a comparable within-site AUROC; see results/robustness/CONFOUNDS.md for the demographic floor per split.
-[5] sz_aseeg: seed Eval on split 2 was 0.583 (near/below chance); split gains +0.045 +0.212 +0.109, so the mean gain leans on that split.
+[4] adhd_adhd200: seed Eval on split 1 was 0.453 (below 0.6, the lowest of the 3 splits); split gains +0.264 +0.001 +0.015, so the mean gain leans on that split. adhd_adhd200: age + sex alone give a comparable within-site AUROC; see results/robustness/CONFOUNDS.md for the demographic floor per split.
+[5] sz_aseeg: seed Eval on split 2 was 0.583 (below 0.6, the lowest of the 3 splits); split gains +0.045 +0.212 +0.109, so the mean gain leans on that split.
 
 Pooled (k=11 AUROC tasks): **+0.050** AUROC, equal-weight mean (95% CI +0.006 .. +0.094, t-test across tasks p = 0.0293). Random effects (DL) +0.044 (95% CI +0.009 .. +0.079, p = 0.0142; I^2 = 85%); 8/11 tasks positive (sign test p = 0.227, Wilcoxon p = 0.042).
 
@@ -199,8 +199,8 @@ Sensitivity of the pooled gain (equal-weight mean, t-interval across tasks):
 | adhd_adhd200 | +0.038 | 0.627 0.612 0.644 | 0.717 0.629 0.649 | -0.010 .. +0.091 | 0.1359 | 0.8156 | 0.0370 | 0.2219 | 0.2916 |
 | mdd_tdbrain^ | +0.070 | 0.931 0.817 0.905 | 0.984 0.933 0.944 | +0.011 .. +0.129 | 0.0090 | 0.0900 | 0.0060 | 0.0480 | 0.0976 |
 | adhd_tdbrain | +0.137 | 0.838 0.833 0.685 | 0.869 1.000 0.897 | +0.025 .. +0.259 | 0.0040 | 0.0440 | 0.0010 | 0.0120 | 0.1294 |
-| sz_aseeg | +0.094 | 0.724 0.609 0.782 | 0.744 0.795 0.859 | -0.005 .. +0.222 | 0.0780 | 0.6237 | 0.0260 | 0.1819 | 0.1943 |
-| abnormal_tuab^ | +0.031 | 0.883 0.851 0.929 | 0.931 0.899 0.926 | -0.003 .. +0.055 | 0.0820 | 0.6237 | 0.0010 | 0.0120 | 0.2112 |
+| sz_aseeg | +0.094 | 0.724 0.609 0.782 | 0.744 0.795 0.859 | -0.005 .. +0.222 | 0.0780 | 0.5757 | 0.0260 | 0.1819 | 0.1943 |
+| abnormal_tuab^ | +0.031 | 0.883 0.851 0.929 | 0.931 0.899 0.926 | -0.002 .. +0.055 | 0.0720 | 0.5757 | 0.0010 | 0.0120 | 0.2112 |
 | helsinki | +0.072 | 0.852 0.848 0.780 | 0.934 0.896 0.867 | +0.033 .. +0.106 | 0.0010 | 0.0120 | 0.0010 | 0.0120 | 0.0276 |
 
 Pooled (k=11 AUROC tasks): **+0.036** AUROC, equal-weight mean (95% CI -0.002 .. +0.075, t-test across tasks p = 0.0635). Random effects (DL) +0.027 (95% CI +0.002 .. +0.053, p = 0.0377; I^2 = 83%); 7/11 tasks positive (sign test p = 0.549, Wilcoxon p = 0.083).
@@ -240,7 +240,7 @@ Sensitivity of the pooled gain (equal-weight mean, t-interval across tasks):
 | mdd_tdbrain | +0.008 | 0.970 0.919 0.949 | 0.984 0.933 0.944 | -0.019 .. +0.034 | 0.6817 | 1.0000 | 0.5147 | 1.0000 | 0.3625 |
 | adhd_tdbrain | +0.004 | 0.967 0.913 0.874 | 0.869 1.000 0.897 | -0.114 .. +0.102 | 0.9505 | 1.0000 | 0.8626 | 1.0000 | 0.9442 |
 | sz_aseeg | +0.121 | 0.660 0.625 0.750 | 0.744 0.795 0.859 | +0.004 .. +0.245 | 0.0440 | 0.4398 | 0.0630 | 0.5037 | 0.0423 |
-| abnormal_tuab | +0.029 | 0.885 0.878 0.904 | 0.931 0.899 0.926 | +0.014 .. +0.046 | 0.0010 | 0.0120 | 0.0010 | 0.0120 | 0.0705 |
+| abnormal_tuab | +0.029 | 0.885 0.878 0.904 | 0.931 0.899 0.926 | +0.014 .. +0.043 | 0.0010 | 0.0120 | 0.0010 | 0.0120 | 0.0705 |
 | helsinki | +0.075 | 0.839 0.820 0.812 | 0.934 0.896 0.867 | +0.032 .. +0.103 | 0.0010 | 0.0120 | 0.0010 | 0.0120 | 0.0241 |
 
 Pooled (k=11 AUROC tasks): **+0.017** AUROC, equal-weight mean (95% CI -0.017 .. +0.051, t-test across tasks p = 0.2812). Random effects (DL) +0.015 (95% CI -0.004 .. +0.034, p = 0.1157; I^2 = 67%); 7/11 tasks positive (sign test p = 0.549, Wilcoxon p = 0.320).
@@ -280,7 +280,7 @@ Sensitivity of the pooled gain (equal-weight mean, t-interval across tasks):
 | mdd_tdbrain | +0.090 | 0.871 0.817 0.905 | 0.984 0.933 0.944 | +0.025 .. +0.147 | 0.0040 | 0.0400 | 0.0010 | 0.0120 | 0.0702 |
 | adhd_tdbrain | +0.137 | 0.838 0.833 0.685 | 0.869 1.000 0.897 | +0.025 .. +0.259 | 0.0040 | 0.0400 | 0.0010 | 0.0120 | 0.1294 |
 | sz_aseeg | +0.122 | 0.699 0.583 0.750 | 0.744 0.795 0.859 | -0.008 .. +0.259 | 0.0640 | 0.5117 | 0.0330 | 0.1649 | 0.1288 |
-| abnormal_tuab | +0.052 | 0.874 0.847 0.879 | 0.931 0.899 0.926 | +0.040 .. +0.064 | 0.0010 | 0.0120 | 0.0010 | 0.0120 | 0.0028 |
+| abnormal_tuab | +0.052 | 0.874 0.847 0.879 | 0.931 0.899 0.926 | +0.038 .. +0.063 | 0.0010 | 0.0120 | 0.0010 | 0.0120 | 0.0028 |
 | helsinki | +0.072 | 0.852 0.848 0.780 | 0.934 0.896 0.867 | +0.033 .. +0.106 | 0.0010 | 0.0120 | 0.0010 | 0.0120 | 0.0276 |
 
 Pooled (k=11 AUROC tasks): **+0.046** AUROC, equal-weight mean (95% CI +0.003 .. +0.089, t-test across tasks p = 0.0374). Random effects (DL) +0.039 (95% CI +0.006 .. +0.071, p = 0.0189; I^2 = 86%); 7/11 tasks positive (sign test p = 0.549, Wilcoxon p = 0.054).

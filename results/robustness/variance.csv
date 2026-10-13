@@ -44,6 +44,8 @@ eeg_psych,sz_aseeg,s1r3,1,3,0.79294,0.88366,0.69872,0.71154,0.01282,20,7,"cohere
 eeg_psych,sz_aseeg,s2,2,1,0.84418,0.89266,0.58333,0.79487,0.21154,20,10,"aperiodic/1-f-slope, artifact-handling, complexity/fractal-dimension, covariance/riemannian, linear-model, peak-alpha-fr"
 eeg_psych,sz_aseeg,s3,3,1,0.77978,0.85111,0.75000,0.85897,0.10897,20,8,"artifact-handling, complexity/fractal-dimension, covariance/riemannian, ensemble/stacking, entropy, graph-theory, linear"
 eeg_psych,abnormal_tuab,s1,1,1,0.86927,0.93774,0.83990,0.93064,0.09074,20,11,"SVM/kernel, absolute-band-power, alpha-asymmetry, artifact-handling, covariance/riemannian, ensemble/stacking, gradient-"
+eeg_psych,abnormal_tuab,s1r2,1,2,0.86927,0.93336,0.83990,0.92580,0.08590,20,14,"absolute-band-power, alpha-asymmetry, aperiodic/1-f-slope, artifact-handling, coherence/connectivity, covariance/riemann"
+eeg_psych,abnormal_tuab,s1r3,1,3,0.86927,0.93313,0.83990,0.92017,0.08027,20,10,"SVM/kernel, absolute-band-power, artifact-handling, covariance/riemannian, ensemble/stacking, gradient-boosting, linear-"
 eeg_psych,abnormal_tuab,s2,2,1,0.87152,0.93915,0.82917,0.89855,0.06938,20,9,"absolute-band-power, artifact-handling, covariance/riemannian, ensemble/stacking, gradient-boosting, linear-model, prepr"
 eeg_psych,abnormal_tuab,s3,3,1,0.85471,0.92620,0.87184,0.92605,0.05421,20,10,"SVM/kernel, absolute-band-power, alpha-asymmetry, artifact-handling, complexity/fractal-dimension, covariance/riemannian"
 neonatal_seizure,helsinki,s1,1,1,0.74740,0.87359,0.85227,0.93419,0.08192,20,11,"artifact-handling, context-window/multi-scale, gradient-boosting, inter-channel/spatial-spread, line-length/amplitude, p"
