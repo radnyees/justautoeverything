@@ -1,0 +1,21 @@
+{
+  "project": "eeg_psych",
+  "task": "adhd_tdbrain",
+  "seed": 2,
+  "dev_seed": 0.737729,
+  "dev_champion": 0.922531,
+  "eval_seed": 0.8333333333333334,
+  "eval_champion": 1.0,
+  "dev_gain": 0.18480200000000002,
+  "eval_gain": 0.16666666666666663,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.061610793755041096,
+    "ci95": [
+      0.05965909090909094,
+      0.3029627919175333
+    ],
+    "p_one_sided": 0.0
+  },
+  "external": {}
+}

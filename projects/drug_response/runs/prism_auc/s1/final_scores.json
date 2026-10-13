@@ -1,0 +1,21 @@
+{
+  "project": "drug_response",
+  "task": "prism_auc",
+  "seed": 1,
+  "dev_seed": 0.126431,
+  "dev_champion": 0.143441,
+  "eval_seed": 0.16789724496806963,
+  "eval_champion": 0.18177577524390287,
+  "dev_gain": 0.017010000000000025,
+  "eval_gain": 0.013878530275833245,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.009101241803954394,
+    "ci95": [
+      -0.0035563363725462983,
+      0.032313712944143674
+    ],
+    "p_one_sided": 0.055
+  },
+  "external": {}
+}

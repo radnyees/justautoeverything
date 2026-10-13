@@ -1,0 +1,21 @@
+{
+  "project": "proteomics_ad",
+  "task": "plasma_ad",
+  "seed": 2,
+  "dev_seed": 0.893519,
+  "dev_champion": 0.94537,
+  "eval_seed": 0.888888888888889,
+  "eval_champion": 0.7948717948717948,
+  "dev_gain": 0.05185100000000009,
+  "eval_gain": -0.09401709401709413,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.05514155217578623,
+    "ci95": [
+      -0.2167187500000001,
+      0.0
+    ],
+    "p_one_sided": 0.999
+  },
+  "external": {}
+}

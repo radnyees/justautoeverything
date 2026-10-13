@@ -1,0 +1,21 @@
+{
+  "project": "proteomics_ad",
+  "task": "csf_ad",
+  "seed": 3,
+  "dev_seed": 0.885591,
+  "dev_champion": 0.942752,
+  "eval_seed": 0.8744444444444445,
+  "eval_champion": 0.9844444444444443,
+  "dev_gain": 0.05716100000000002,
+  "eval_gain": 0.10999999999999988,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.059608557021332546,
+    "ci95": [
+      0.014415922619047566,
+      0.25
+    ],
+    "p_one_sided": 0.0155
+  },
+  "external": {}
+}

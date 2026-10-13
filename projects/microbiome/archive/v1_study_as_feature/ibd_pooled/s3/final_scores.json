@@ -1,0 +1,21 @@
+{
+  "project": "microbiome",
+  "task": "ibd_pooled",
+  "seed": 3,
+  "dev_seed": 0.798789,
+  "dev_champion": 0.837681,
+  "eval_seed": 0.7788093132920719,
+  "eval_champion": 0.8043029767167698,
+  "dev_gain": 0.03889200000000004,
+  "eval_gain": 0.025493663424697832,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.015377591330037134,
+    "ci95": [
+      -0.004126903764529644,
+      0.056178030120094
+    ],
+    "p_one_sided": 0.0435
+  },
+  "external": {}
+}

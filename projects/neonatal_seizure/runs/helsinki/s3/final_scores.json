@@ -1,0 +1,21 @@
+{
+  "project": "neonatal_seizure",
+  "task": "helsinki",
+  "seed": 3,
+  "dev_seed": 0.758674,
+  "dev_champion": 0.88029,
+  "eval_seed": 0.7798591158244371,
+  "eval_champion": 0.866611230570609,
+  "dev_gain": 0.12161600000000006,
+  "eval_gain": 0.08675211474617184,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.03238797750379614,
+    "ci95": [
+      0.04451641392510912,
+      0.17124931951740263
+    ],
+    "p_one_sided": 0.0
+  },
+  "external": {}
+}
