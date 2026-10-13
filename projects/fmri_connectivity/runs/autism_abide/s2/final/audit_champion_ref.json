@@ -1,0 +1,1 @@
+{"static": {"has_featurize": true, "functions": ["_lw_corr", "_sym_fn", "featurize"], "hits": [{"function": "_lw_corr", "line": 19, "code": "c = LedoitWolf(store_precision=False, assume_centered=True).fit(x).covariance_"}], "batch_relative_outputs": []}, "score": 0.817478292766561, "score_joint": 0.8165375380612424, "feat_max_rel_diff": 0.27715531372367486, "n_chunks": 10}

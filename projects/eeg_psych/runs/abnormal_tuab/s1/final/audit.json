@@ -1,0 +1,144 @@
+{
+ "seed": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_bandpower",
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.8398996045025857,
+  "score_joint": 0.8398996045025857,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ },
+ "champion": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_bandpower_view",
+    "_clean_mask",
+    "_cov_epochs",
+    "_cov_view",
+    "_epochs",
+    "_logm_upper",
+    "_pair_indices",
+    "_psd_epochs",
+    "_ref_basis",
+    "_shape_epochs",
+    "_shape_view",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "_bandpower_view",
+     "line": 89,
+     "code": "rel_p90 = np.percentile(rel_e, 90, axis=1)"
+    },
+    {
+     "function": "_bandpower_view",
+     "line": 97,
+     "code": "d_ep = np.percentile(np.abs(rel_e[li] - rel_e[ri]), 90, axis=1)"
+    },
+    {
+     "function": "_cov_epochs",
+     "line": 153,
+     "code": "xf = xf - xf.mean(axis=0, keepdims=True)          # enforce average reference"
+    },
+    {
+     "function": "_cov_view",
+     "line": 163,
+     "code": "c = C[sel].mean(axis=0)"
+    },
+    {
+     "function": "_shape_epochs",
+     "line": 119,
+     "code": "steep = np.percentile(np.abs(d1), 99, axis=-1) / sd          # sharpest slopes relative to amplitude"
+    },
+    {
+     "function": "_shape_view",
+     "line": 128,
+     "code": "out.append(np.percentile(s[k], 90, axis=1))"
+    }
+   ],
+   "batch_relative_outputs": []
+  },
+  "score": 0.9306611905486258,
+  "score_joint": 0.9306611905486258,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ },
+ "seed_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_bandpower",
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.8398658013048034,
+  "score_joint": 0.8398658013048034,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ },
+ "champion_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_bandpower_view",
+    "_clean_mask",
+    "_cov_epochs",
+    "_cov_view",
+    "_epochs",
+    "_logm_upper",
+    "_pair_indices",
+    "_psd_epochs",
+    "_ref_basis",
+    "_shape_epochs",
+    "_shape_view",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "_bandpower_view",
+     "line": 89,
+     "code": "rel_p90 = np.percentile(rel_e, 90, axis=1)"
+    },
+    {
+     "function": "_bandpower_view",
+     "line": 97,
+     "code": "d_ep = np.percentile(np.abs(rel_e[li] - rel_e[ri]), 90, axis=1)"
+    },
+    {
+     "function": "_cov_epochs",
+     "line": 153,
+     "code": "xf = xf - xf.mean(axis=0, keepdims=True)          # enforce average reference"
+    },
+    {
+     "function": "_cov_view",
+     "line": 163,
+     "code": "c = C[sel].mean(axis=0)"
+    },
+    {
+     "function": "_shape_epochs",
+     "line": 119,
+     "code": "steep = np.percentile(np.abs(d1), 99, axis=-1) / sd          # sharpest slopes relative to amplitude"
+    },
+    {
+     "function": "_shape_view",
+     "line": 128,
+     "code": "out.append(np.percentile(s[k], 90, axis=1))"
+    }
+   ],
+   "batch_relative_outputs": []
+  },
+  "score": 0.9306611905486258,
+  "score_joint": 0.9306611905486258,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ }
+}

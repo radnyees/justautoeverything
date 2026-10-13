@@ -1,0 +1,24 @@
+{
+  "project": "proteomics_ad",
+  "task": "csf_ad",
+  "seed": 1,
+  "run": "s1",
+  "subdir": "runs_bestof20",
+  "solution": "solution.py",
+  "dev_seed": 0.837979,
+  "dev_champion": 0.837979,
+  "eval_seed": 0.9522222222222222,
+  "eval_champion": 0.9522222222222222,
+  "dev_gain": 0.0,
+  "eval_gain": 0.0,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.0,
+    "ci95": [
+      0.0,
+      0.0
+    ],
+    "p_one_sided": 1.0
+  },
+  "external": {}
+}

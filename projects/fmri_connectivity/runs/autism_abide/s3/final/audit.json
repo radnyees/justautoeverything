@@ -1,0 +1,106 @@
+{
+ "seed": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.7775791946101307,
+  "score_joint": 0.7775791946101307,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ },
+ "champion": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_lw_cov",
+    "_scrub",
+    "_standardize_ts",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "_lw_cov",
+     "line": 71,
+     "code": "c = LedoitWolf(assume_centered=True).fit(xs).covariance_"
+    },
+    {
+     "function": "_scrub",
+     "line": 48,
+     "code": "d = np.sqrt(np.mean(np.diff(xs[:, live], axis=0) ** 2, axis=1))  # length T-1"
+    },
+    {
+     "function": "_standardize_ts",
+     "line": 31,
+     "code": "sd = x.std(axis=0)"
+    },
+    {
+     "function": "_standardize_ts",
+     "line": 33,
+     "code": "xs = (x - x.mean(axis=0)) / np.where(dead, 1.0, sd)"
+    }
+   ],
+   "batch_relative_outputs": []
+  },
+  "score": 0.7648717654382581,
+  "score_joint": 0.7720796596600132,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ },
+ "seed_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.7775791946101307,
+  "score_joint": 0.7775791946101307,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ },
+ "champion_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_lw_cov",
+    "_scrub",
+    "_standardize_ts",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "_lw_cov",
+     "line": 71,
+     "code": "c = LedoitWolf(assume_centered=True).fit(xs).covariance_"
+    },
+    {
+     "function": "_scrub",
+     "line": 48,
+     "code": "d = np.sqrt(np.mean(np.diff(xs[:, live], axis=0) ** 2, axis=1))  # length T-1"
+    },
+    {
+     "function": "_standardize_ts",
+     "line": 31,
+     "code": "sd = x.std(axis=0)"
+    },
+    {
+     "function": "_standardize_ts",
+     "line": 33,
+     "code": "xs = (x - x.mean(axis=0)) / np.where(dead, 1.0, sd)"
+    }
+   ],
+   "batch_relative_outputs": []
+  },
+  "score": 0.7690882704412234,
+  "score_joint": 0.7720796596600132,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ }
+}

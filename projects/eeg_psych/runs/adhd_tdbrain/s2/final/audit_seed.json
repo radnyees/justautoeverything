@@ -1,0 +1,1 @@
+{"static": {"has_featurize": true, "functions": ["_bandpower", "featurize"], "hits": [], "batch_relative_outputs": []}, "score": 0.8333333333333334, "score_joint": 0.8333333333333334, "feat_max_rel_diff": 0.0, "n_chunks": 20}

@@ -1,0 +1,80 @@
+{
+ "seed": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.7558139534883721,
+  "score_joint": 0.7558139534883721,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": [
+    {
+     "function": "_inner_weights",
+     "line": 92,
+     "code": "folds.append((np.vstack([rankdata(p) for p in P]), y[te]))"
+    },
+    {
+     "function": "fit_predict",
+     "line": 110,
+     "code": "R = np.vstack([rankdata(p) for p in P])"
+    }
+   ]
+  },
+  "score": 0.6841085271317829,
+  "score_joint": 0.724031007751938,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "seed_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.7558139534883721,
+  "score_joint": 0.7558139534883721,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": [
+    {
+     "function": "_inner_weights",
+     "line": 92,
+     "code": "folds.append((np.vstack([rankdata(p) for p in P]), y[te]))"
+    },
+    {
+     "function": "fit_predict",
+     "line": 110,
+     "code": "R = np.vstack([rankdata(p) for p in P])"
+    }
+   ]
+  },
+  "score": 0.7585271317829457,
+  "score_joint": 0.724031007751938,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ }
+}

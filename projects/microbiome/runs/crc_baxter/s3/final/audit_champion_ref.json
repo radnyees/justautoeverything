@@ -1,0 +1,1 @@
+{"static": {"has_featurize": true, "functions": ["_expected_richness", "_shannon", "featurize"], "hits": []}, "score": 0.656201550387597, "score_joint": 0.6790697674418604, "feat_max_rel_diff": 0.0, "n_chunks": 20}

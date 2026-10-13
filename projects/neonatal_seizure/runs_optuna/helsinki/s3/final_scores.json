@@ -1,0 +1,24 @@
+{
+  "project": "neonatal_seizure",
+  "task": "helsinki",
+  "seed": 3,
+  "run": "s3",
+  "subdir": "runs_optuna",
+  "solution": "solution.py",
+  "dev_seed": 0.758674,
+  "dev_champion": 0.825389,
+  "eval_seed": 0.7798591158244371,
+  "eval_champion": 0.8124251213139142,
+  "dev_gain": 0.06671500000000008,
+  "eval_gain": 0.03256600548947708,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.025582133910093615,
+    "ci95": [
+      -0.00823393472070701,
+      0.09139109420204641
+    ],
+    "p_one_sided": 0.0605
+  },
+  "external": {}
+}

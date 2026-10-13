@@ -1,0 +1,148 @@
+{
+ "seed": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.9522222222222222,
+  "score_joint": 0.9522222222222222,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_genes",
+    "_reference_median",
+    "_remove_contamination",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "_reference_median",
+     "line": 99,
+     "code": "present = L.notna().mean()"
+    },
+    {
+     "function": "_remove_contamination",
+     "line": 70,
+     "code": "ery_cols = [c for c in L.columns if _genes(c) & ERY and L[c].notna().mean() >= 0.3]"
+    },
+    {
+     "function": "_remove_contamination",
+     "line": 75,
+     "code": "Z = (E - E.mean()) / (E.std(ddof=0) + 1e-9)"
+    },
+    {
+     "function": "_remove_contamination",
+     "line": 77,
+     "code": "s = s - s.mean()"
+    },
+    {
+     "function": "_remove_contamination",
+     "line": 87,
+     "code": "sm = s[m] - s[m].mean()"
+    },
+    {
+     "function": "_remove_contamination",
+     "line": 91,
+     "code": "beta = np.dot(sm, x[m] - x[m].mean()) / den"
+    }
+   ],
+   "batch_relative_outputs": [
+    {
+     "function": "_site_rank",
+     "line": 233,
+     "code": "return rankdata(s) / len(s)"
+    },
+    {
+     "function": "_site_rank",
+     "line": 237,
+     "code": "out[m] = rankdata(s[m]) / m.sum()"
+    }
+   ]
+  },
+  "score": 0.6366666666666666,
+  "score_joint": 0.9266666666666666,
+  "feat_max_rel_diff": 2.8806086858623803,
+  "n_chunks": 20
+ },
+ "seed_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.9522222222222222,
+  "score_joint": 0.9522222222222222,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_genes",
+    "_reference_median",
+    "_remove_contamination",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "_reference_median",
+     "line": 99,
+     "code": "present = L.notna().mean()"
+    },
+    {
+     "function": "_remove_contamination",
+     "line": 70,
+     "code": "ery_cols = [c for c in L.columns if _genes(c) & ERY and L[c].notna().mean() >= 0.3]"
+    },
+    {
+     "function": "_remove_contamination",
+     "line": 75,
+     "code": "Z = (E - E.mean()) / (E.std(ddof=0) + 1e-9)"
+    },
+    {
+     "function": "_remove_contamination",
+     "line": 77,
+     "code": "s = s - s.mean()"
+    },
+    {
+     "function": "_remove_contamination",
+     "line": 87,
+     "code": "sm = s[m] - s[m].mean()"
+    },
+    {
+     "function": "_remove_contamination",
+     "line": 91,
+     "code": "beta = np.dot(sm, x[m] - x[m].mean()) / den"
+    }
+   ],
+   "batch_relative_outputs": [
+    {
+     "function": "_site_rank",
+     "line": 233,
+     "code": "return rankdata(s) / len(s)"
+    },
+    {
+     "function": "_site_rank",
+     "line": 237,
+     "code": "out[m] = rankdata(s[m]) / m.sum()"
+    }
+   ]
+  },
+  "score": 0.9022222222222223,
+  "score_joint": 0.9266666666666666,
+  "feat_max_rel_diff": 2.8806086858623803,
+  "n_chunks": 20
+ }
+}

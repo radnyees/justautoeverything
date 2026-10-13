@@ -1,0 +1,96 @@
+{
+ "seed": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_bandpower",
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.8291271347248577,
+  "score_joint": 0.8291271347248577,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ },
+ "champion": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_basis",
+    "_covs",
+    "_filterbank",
+    "_logspec",
+    "_segments",
+    "_views",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "_segments",
+     "line": 57,
+     "code": "lp = np.log(P[:, band, :].sum(axis=1) + 1e-12).mean(axis=0)"
+    }
+   ],
+   "batch_relative_outputs": [
+    {
+     "function": "_rank01",
+     "line": 214,
+     "code": "return (rankdata(p) - 1) / max(len(p) - 1, 1)"
+    }
+   ]
+  },
+  "score": 0.889692944626531,
+  "score_joint": 0.8985466620665861,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ },
+ "seed_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_bandpower",
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.8291271347248577,
+  "score_joint": 0.8291271347248577,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ },
+ "champion_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_basis",
+    "_covs",
+    "_filterbank",
+    "_logspec",
+    "_segments",
+    "_views",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "_segments",
+     "line": 57,
+     "code": "lp = np.log(P[:, band, :].sum(axis=1) + 1e-12).mean(axis=0)"
+    }
+   ],
+   "batch_relative_outputs": [
+    {
+     "function": "_rank01",
+     "line": 214,
+     "code": "return (rankdata(p) - 1) / max(len(p) - 1, 1)"
+    }
+   ]
+  },
+  "score": 0.8968906330860791,
+  "score_joint": 0.8985466620665861,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ }
+}

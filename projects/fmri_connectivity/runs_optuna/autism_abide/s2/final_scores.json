@@ -1,0 +1,24 @@
+{
+  "project": "fmri_connectivity",
+  "task": "autism_abide",
+  "seed": 2,
+  "run": "s2",
+  "subdir": "runs_optuna",
+  "solution": "solution.py",
+  "dev_seed": 0.737533,
+  "dev_champion": 0.779528,
+  "eval_seed": 0.7895425623659853,
+  "eval_champion": 0.8110169470946892,
+  "dev_gain": 0.041995000000000005,
+  "eval_gain": 0.021474384728703888,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.032676855133199595,
+    "ci95": [
+      -0.039492799510656595,
+      0.08645145089037458
+    ],
+    "p_one_sided": 0.258
+  },
+  "external": {}
+}

@@ -1,0 +1,39 @@
+{
+  "project": "eeg_psych",
+  "task": "abnormal_tuab",
+  "seed": 3,
+  "run": "s3",
+  "subdir": "runs_optuna",
+  "solution": "solution.py",
+  "dev_seed": 0.854713,
+  "dev_champion": 0.896479,
+  "eval_seed": 0.8718398942698009,
+  "eval_champion": 0.9039743226659114,
+  "dev_gain": 0.04176600000000008,
+  "eval_gain": 0.03213442839611047,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.010891633115945466,
+    "ci95": [
+      0.011382162144190053,
+      0.05353469350122497
+    ],
+    "p_one_sided": 0.0
+  },
+  "external": {
+    "tuab_official_eval": {
+      "seed": 0.8688359788359789,
+      "champion": 0.8965608465608466,
+      "gain": 0.027724867724867708,
+      "bootstrap": {
+        "n_boot": 2000,
+        "boot_se": 0.016212664303888933,
+        "ci95": [
+          -0.004251686603419685,
+          0.06074181443215868
+        ],
+        "p_one_sided": 0.0405
+      }
+    }
+  }
+}

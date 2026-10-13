@@ -8,6 +8,9 @@
   are not part of the summary. Tasks whose v1 runs had no such inputs were not rerun:
   `crc_baxter`, `plasma_ad` (batch only, balanced 4 AD / 4 NC in the small batch), `prism_auc`
   (cancer lineage is a legitimate biological covariate).
+- The v1 shortcut runs, the external-transfer results, the same-budget baselines, the corrected
+  statistics, run-to-run variance and the transduction audit are reported as findings in
+  `results/robustness/` (see its README), not only as caveats.
 - **Selection on Dev.** Each loop keeps the best of ~20 candidates on a fixed 5-fold CV of the dev
   pool, so Dev gains are optimistically biased (winner's curse); only Eval (scored once) and the
   external datasets are unbiased. See fig1 (Dev vs Eval gain).

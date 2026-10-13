@@ -20,6 +20,6 @@ ap.add_argument("--size", default="m", choices=["m", "l"])
 a = ap.parse_args()
 project = Path(a.script).parts[1] if a.script.startswith("projects/") else None
 res = modal.Function.from_name("jae", f"pr_{a.size}").remote(
-    a.script, a.args, bundle(project) if project else None)
+    a.script, a.args, bundle(project))
 print(res["log"])
 raise SystemExit(res["returncode"])
