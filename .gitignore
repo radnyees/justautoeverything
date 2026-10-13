@@ -5,3 +5,9 @@ catboost_info/
 # loop scratch file: the last candidate tried (solution.py is the champion)
 **/runs/**/candidate.py
 *.log
+
+# LaTeX build by-products (paper/paper.pdf is kept)
+paper/*.blg
+paper/*.synctex.gz
+paper/*.aux
+paper/*.bbl

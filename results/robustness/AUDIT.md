@@ -12,7 +12,7 @@ use unlabeled Eval-set statistics. For every seed and champion (12 tasks x 3 spl
   averaging, test-set scaling) is computed from training-time data -- a deployable variant.
 * static scan: rank-type outputs in `fit_predict`; cross-item operations inside `featurize`.
 
-Seeds: 1 (1 = all seeds exactly inductive).
+Seeds: all 36 are exactly inductive (chunked Eval score = joint Eval score).
 Champions with batch-dependent featurize: 12/36; with batch-relative (rank) outputs: 11/36; failed audits: 0.
 Champion Eval, joint -> ref-batch: mean change -0.0006, min -0.0244; joint -> chunked: mean -0.0187, min -0.2900.
 

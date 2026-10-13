@@ -501,6 +501,15 @@ def transfer(arms_df):
 
 
 # ------------------------------------------------------------------ 5. transduction audit
+def _seed_line(seeds):
+    """One sentence on whether every audited seed scores identically when Eval is chunked."""
+    diff = (seeds["eval_chunked"] - seeds["eval_joint"]).abs()
+    n_bad = int((diff >= 1e-9).sum())
+    if n_bad == 0:
+        return f"Seeds: all {len(seeds)} are exactly inductive (chunked Eval score = joint Eval score)."
+    return f"Seeds: {n_bad}/{len(seeds)} are not exactly inductive (chunked Eval score != joint Eval score)."
+
+
 def audit():
     rows = []
     for project, task in TASKS:
@@ -540,8 +549,7 @@ def audit():
          "  chunk (only the chunk's outputs kept), so any test-batch statistic in `fit_predict` (e.g. rank",
          "  averaging, test-set scaling) is computed from training-time data -- a deployable variant.",
          "* static scan: rank-type outputs in `fit_predict`; cross-item operations inside `featurize`.", "",
-         f"Seeds: {int((ok[ok['arm'] == 'seed']['eval_chunked'] - ok[ok['arm'] == 'seed']['eval_joint']).abs().max() < 1e-9)} "
-         f"(1 = all seeds exactly inductive).",
+         _seed_line(ok[ok["arm"] == "seed"]),
          f"Champions with batch-dependent featurize: {int(ch['featurize_batch_dependent'].sum())}/{len(ch)}; with "
          f"batch-relative (rank) outputs: {int(ch['batch_relative_outputs'].sum())}/{len(ch)}; "
          f"failed audits: {int(d['failed'].sum())}.",
