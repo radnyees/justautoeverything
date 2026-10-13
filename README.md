@@ -61,8 +61,11 @@ dataset and literature references: [`docs/references.md`](docs/references.md).
    * **Same-budget baselines** (same harness, splits, Dev CV, time limit, 20 Dev evaluations,
      keep-if-better on Dev, Eval scored once): *one-shot LLM* (round 1 of best-of-20), *best-of-20
      LLM without feedback* (`core/loop.py --strategy best_of_n`: every round sees only the brief
-     and the seed), and *Optuna TPE* over a hand-written parameterized pipeline per project
-     (`core/search.py`, `projects/*/baselines/{template,space}.py`; no LLM).
+     and the seed), and *Optuna TPE over a loop-informed search space*: a hand-written
+     parameterized pipeline per project (`core/search.py`, `projects/*/baselines/{template,space}.py`).
+     The optimizer uses no LLM, but the search spaces were written AFTER the loop runs and include
+     feature families the loop's champions found (e.g. aperiodic slope, coherence, Hjorth
+     parameters, per-neonate normalization), so this baseline is informed by the loop's findings.
    * **Corrected statistics** (`core/stats.py`): task-level paired bootstrap that resamples
      subjects from the union of the 3 overlapping Eval sets; two-sided p with Holm and BH across
      the 12 tasks; pooled gain over the 11 AUROC tasks (equal-weight mean, t-interval across

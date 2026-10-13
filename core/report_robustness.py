@@ -26,7 +26,7 @@ from stats import TASKS, arm_report  # noqa: E402
 
 RB = ROOT / "results" / "robustness"
 ARM_STYLE = {"oneshot": ("One-shot LLM", "#9AA5B4", "v"), "bestof20": ("Best-of-20 LLM (no feedback)", "#D9860F", "s"),
-             "optuna": ("Optuna TPE (no LLM)", "#1F9D55", "D"), "loop": ("Autoresearch loop", "#2563C9", "o")}
+             "optuna": ("Optuna, loop-informed space", "#1F9D55", "D"), "loop": ("Autoresearch loop", "#2563C9", "o")}
 TASK_ORDER = [t for _, t in sorted(TASKS, key=lambda pt: (PROJECT_ORDER.index(pt[0]), TASKS.index(pt)))]
 PROJ = dict((t, p) for p, t in TASKS)
 
@@ -87,8 +87,12 @@ def baselines(df, stats_df):
          "  seed on Dev).",
          "* **Best-of-20 LLM** = 20 independent proposals, each seeing only the brief + the seed (no",
          "  history, no scores); best Dev candidate adopted if it beats the seed.",
-         "* **Optuna TPE** = 20 trials of a hand-written parameterized pipeline per project",
-         "  (`projects/*/baselines/`), no LLM; best Dev trial adopted if it beats the seed.",
+         "* **Optuna, loop-informed space** = 20 Optuna TPE trials of a hand-written parameterized",
+         "  pipeline per project (`projects/*/baselines/`); best Dev trial adopted if it beats the seed.",
+         "  The optimizer uses no LLM, but the search spaces were written after the loop runs and include",
+         "  feature families the loop's champions found (aperiodic slope, coherence, Hjorth parameters,",
+         "  per-neonate normalization, ...). It is therefore informed by the loop's findings: a stronger",
+         "  baseline than an independent search (conservative for the loop), not an LLM-free one.",
          "* **Loop** = the autoresearch loop (history + scores fed back each round).", "",
          "| task | seed | " + " | ".join(ARM_STYLE[a][0] for a in arms) + " |",
          "|---|---|" + "---|" * len(arms)]
@@ -293,7 +297,8 @@ def shortcuts():
             out = {"task": t, "split": s}
             for arm in ("seed", "champion"):
                 rep = json.loads((f.parent / f"{arm}.json").read_text())
-                sites = [gs[str(g)] for g in rep["groups"]]
+                # pooled IBD: site = study = id prefix (v1/v2 ids include samples dropped in v3)
+                sites = [str(g).split(":")[0] if t == "ibd_pooled" else gs[str(g)] for g in rep["groups"]]
                 out[f"{arm}_pooled"] = roc_auc_score(rep["y"], rep["predictions"])
                 out[f"{arm}_within"] = within_site_auroc(rep["y"], rep["predictions"], sites)
             v2 = _fs(project, "runs", t, f"s{s}")
@@ -371,18 +376,50 @@ def _xticks(s):
 
 
 # ------------------------------------------------------------------ 4b. external transfer
+EXT_KIND = {"tuab_official_eval": "same hospital (TUH) and protocol -- a within-hospital check, not transfer",
+            "mumtaz": "different site and amplifier (adult MDD vs healthy)",
+            "msu": "different site; adolescents; 1-min, 16-channel recordings",
+            "repod": "different site (Warsaw); 14 + 14 adults",
+            "crc_zeller": "different cohort and sequencing study", "crc_zackular": "different cohort and sequencing study",
+            "crc_xiang": "different cohort and sequencing study", "crc_zhao": "different cohort and sequencing study"}
+
+
+def _auc_ci(y, p, n_boot=2000, seed=0):
+    from sklearn.metrics import roc_auc_score
+    y, p = np.asarray(y).astype(int), np.asarray(p, float)
+    rng = np.random.default_rng(seed)
+    b = []
+    for _ in range(n_boot):
+        i = rng.integers(0, len(y), len(y))
+        if 0 < y[i].sum() < len(i):
+            b.append(roc_auc_score(y[i], p[i]))
+    return float(roc_auc_score(y, p)), float(np.percentile(b, 2.5)), float(np.percentile(b, 97.5))
+
+
+def _verdict(lo, hi):
+    return "above chance" if lo > 0.5 else ("below chance" if hi < 0.5 else "not distinguishable from chance")
+
+
 def transfer(arms_df):
+    """External datasets: ABSOLUTE AUROC vs chance (95% subject-bootstrap CI) for seed and loop
+    champion, next to in-distribution Eval. (A 'gain' over an inverted seed is not transfer.)"""
     rows = []
     for project, task in TASKS:
         for s in (1, 2, 3):
+            run = ROOT / "projects" / project / "runs" / task / f"s{s}"
             fs = _fs(project, "runs", task, f"s{s}")
-            if not fs:
+            if not fs or not fs.get("external"):
                 continue
-            for name, e in fs.get("external", {}).items():
+            reps = {a: json.loads((run / "final" / f"{a}.json").read_text()) for a in ("seed", "champion")}
+            for name in fs["external"]:
                 row = {"project": project, "task": task, "split": s, "external": name,
-                       "internal_seed": fs["eval_seed"], "internal_loop": fs["eval_champion"],
-                       "ext_seed": e["seed"], "ext_loop": e["champion"], "ext_loop_ci": e["bootstrap"]["ci95"],
-                       "ext_loop_p": e["bootstrap"]["p_one_sided"]}
+                       "internal_seed": fs["eval_seed"], "internal_loop": fs["eval_champion"]}
+                for a, key in (("seed", "seed"), ("champion", "loop")):
+                    e = reps[a]["external"][name]
+                    auc, lo, hi = _auc_ci(e["y"], e["predictions"])
+                    assert abs(auc - e["score"]) < 1e-9
+                    row.update({f"ext_{key}": auc, f"ext_{key}_lo": lo, f"ext_{key}_hi": hi})
+                row["verdict_loop"] = _verdict(row["ext_loop_lo"], row["ext_loop_hi"])
                 for arm in ("bestof20", "optuna"):
                     r = arms_df[(arms_df["task"] == task) & (arms_df["split"] == s) & (arms_df["arm"] == arm)]
                     if len(r) and isinstance(r.iloc[0]["external"], dict):
@@ -391,53 +428,68 @@ def transfer(arms_df):
     d = pd.DataFrame(rows)
     if d.empty:
         return
-    d.drop(columns=["ext_loop_ci"]).to_csv(RB / "transfer.csv", index=False, float_format="%.5f")
-    L = ["# External transfer -- a central finding", "",
-         "Every champion and the seed were applied once, unchanged, to independent datasets (other",
-         "sites, amplifiers, populations). In-distribution gains did not reliably transfer.", "",
-         "| task -> external | split | internal Eval seed -> loop | external seed -> loop | ext. gain 95% CI | "
-         "best-of-20 ext. | Optuna ext. |", "|---|---|---|---|---|---|---|"]
+    d.to_csv(RB / "transfer.csv", index=False, float_format="%.5f")
+    L = ["# External transfer -- a finding: the loop's in-distribution gains do not carry over", "",
+         "Seed and loop champion were fitted on the dev pool and applied ONCE, unchanged, to independent",
+         "datasets. Shown are ABSOLUTE AUROCs with 95% subject-bootstrap CIs (2,000 draws) against chance",
+         "(0.5) -- not 'gains', because a gain over a seed that is worse than chance (Mumtaz) only means",
+         "moving toward chance. The TUAB official eval set comes from the same hospital and protocol as",
+         "the training data, so it is a within-hospital check, not transfer. No harmonization across",
+         "datasets was attempted; acquisition differences (amplifier, reference, montage, recording",
+         "length, inferred ASEEG channel order, age range) are an alternative explanation to biology.", "",
+         "Per task (computed from the table below):", ""]
+    for (t, e), gg in d.groupby(["task", "external"], sort=False):
+        n_above = int((gg["verdict_loop"] == "above chance").sum())
+        n_better = int((gg["ext_loop"] > gg["ext_seed"]).sum())
+        L.append(f"* {t} -> {e} ({EXT_KIND.get(e, '')}): loop champion above chance in {n_above}/{len(gg)} splits; "
+                 f"better than the seed in {n_better}/{len(gg)}; mean external AUROC seed {gg['ext_seed'].mean():.3f} "
+                 f"-> loop {gg['ext_loop'].mean():.3f} (in-distribution Eval of the loop: {gg['internal_loop'].mean():.3f}).")
+    L += ["",
+         "| task -> external | what differs | split | in-distribution Eval: seed -> loop | external AUROC seed [95% CI] | "
+         "external AUROC loop [95% CI] | loop vs chance | best-of-20 | Optuna |",
+         "|---|---|---|---|---|---|---|---|---|"]
     for r in d.itertuples():
         b = getattr(r, "ext_bestof20", np.nan)
         o = getattr(r, "ext_optuna", np.nan)
-        L.append(f"| {r.task} -> {r.external} | {r.split} | {r.internal_seed:.3f} -> {r.internal_loop:.3f} | "
-                 f"{r.ext_seed:.3f} -> {r.ext_loop:.3f} | {r.ext_loop_ci[0]:+.3f} .. {r.ext_loop_ci[1]:+.3f} | "
+        L.append(f"| {r.task} -> {r.external} | {EXT_KIND.get(r.external, '')} | {r.split} | "
+                 f"{r.internal_seed:.3f} -> {r.internal_loop:.3f} | {r.ext_seed:.3f} [{r.ext_seed_lo:.2f}, {r.ext_seed_hi:.2f}] | "
+                 f"{r.ext_loop:.3f} [{r.ext_loop_lo:.2f}, {r.ext_loop_hi:.2f}] | {r.verdict_loop} | "
                  f"{'-' if pd.isna(b) else f'{b:.3f}'} | {'-' if pd.isna(o) else f'{o:.3f}'} |")
-    g = d.groupby(["task", "external"]).agg(int_gain=("internal_loop", "mean"), int_seed=("internal_seed", "mean"),
-                                           ext_seed=("ext_seed", "mean"), ext_loop=("ext_loop", "mean"))
-    L += ["", "Mean over splits:", "", "| task -> external | internal gain | external gain | external AUROC seed -> loop |",
-          "|---|---|---|---|"]
+    g = d.groupby(["task", "external"], sort=False).agg(
+        int_loop=("internal_loop", "mean"), ext_seed=("ext_seed", "mean"), ext_loop=("ext_loop", "mean"),
+        above=("verdict_loop", lambda v: int((v == "above chance").sum())), n=("verdict_loop", "size"))
+    g["above"], g["n"] = g["above"].astype(int), g["n"].astype(int)
+    L += ["", "## Summary (mean over 3 splits)", "",
+          "| task -> external | in-distribution Eval (loop) | external AUROC seed -> loop | change vs in-distribution | "
+          "splits with loop above chance |", "|---|---|---|---|---|"]
     for (t, e), r in g.iterrows():
-        L.append(f"| {t} -> {e} | {r.int_gain - r.int_seed:+.3f} | {r.ext_loop - r.ext_seed:+.3f} | "
-                 f"{r.ext_seed:.3f} -> {r.ext_loop:.3f} |")
-    L += ["", "Notes: the MDD seed is *inverted* on Mumtaz (AUROC < 0.5), i.e. the TDBRAIN case/control",
-          "signal is dataset-specific (recording protocol, population); MSU is adolescents with 1-min",
-          "16-channel recordings (age/protocol shift from adult ASEEG); RepOD is a small (14+14) adult set;",
-          "the TUAB official eval split is the same hospital and protocol (a near-in-distribution control)."]
+        L.append(f"| {t} -> {e} | {r.int_loop:.3f} | {r.ext_seed:.3f} -> {r.ext_loop:.3f} | "
+                 f"{r.ext_loop - r.int_loop:+.3f} | {r.above}/{r.n} |")
     (RB / "TRANSFER.md").write_text("\n".join(L) + "\n")
 
-    fig, ax = plt.subplots(figsize=(6.6, 5.6))
-    xg = d["internal_loop"] - d["internal_seed"]
-    yg = d["ext_loop"] - d["ext_seed"]
-    lim = float(max(np.abs(xg).max(), np.abs(yg).max())) * 1.12
-    ax.axhline(0, color=REF, lw=1)
-    ax.axvline(0, color=REF, lw=1)
-    ax.plot([-lim, lim], [-lim, lim], ls="--", color=REF, lw=1, label="external gain = internal gain")
-    task_colors = ["#B5418E", "#2563C9", "#D9860F", "#1F9D55", "#7A5AF8", "#0E9AA7"]
-    markers = ["o", "s", "D", "^", "v", "P"]
-    for k, (t, gt) in enumerate(d.groupby("task", sort=False)):
-        for j, (e, gg) in enumerate(gt.groupby("external")):
-            ax.scatter(gg["internal_loop"] - gg["internal_seed"], gg["ext_loop"] - gg["ext_seed"], s=54,
-                       marker=markers[j % len(markers)], color=task_colors[k % len(task_colors)],
-                       edgecolor="white", linewidth=1, label=f"{t} -> {e}", zorder=3)
-    ax.set_xlim(min(-0.02, float(xg.min()) - 0.03), lim)
-    ax.set_ylim(-lim, lim)
-    ax.set_xlabel("In-distribution Eval gain (loop - seed), per split")
-    ax.set_ylabel("External-dataset gain (loop - seed), same model")
-    ax.grid(True, color=GRID, lw=0.8)
+    # figure: in-distribution vs external AUROC, seed (hollow) and loop (filled), chance line
+    keys = list(dict.fromkeys(zip(d["task"], d["external"])))
+    fig, ax = plt.subplots(figsize=(7.6, 0.62 * len(keys) + 1.6))
+    for i, (t, e) in enumerate(keys[::-1]):
+        g2 = d[(d.task == t) & (d.external == e)]
+        c = color_of(PROJ[t])
+        for r in g2.itertuples():
+            y = i + (r.split - 2) * 0.16
+            ax.plot([r.internal_loop, r.ext_loop], [y, y], color=c, lw=1, alpha=0.35)
+            ax.plot([r.ext_loop_lo, r.ext_loop_hi], [y, y], color=c, lw=2.2, alpha=0.9, solid_capstyle="round")
+            ax.scatter([r.internal_loop], [y], s=26, marker="|", color=INK, zorder=4)
+            ax.scatter([r.ext_seed], [y], s=30, facecolor="white", edgecolor=c, linewidth=1.3, zorder=4)
+            ax.scatter([r.ext_loop], [y], s=36, color=c, edgecolor="white", linewidth=0.8, zorder=5)
+    ax.axvline(0.5, color=REF, lw=1.2, ls="--")
+    ax.set_yticks(range(len(keys)))
+    ax.set_yticklabels([f"{t} -> {e}" + ("  (same hospital)" if e == "tuab_official_eval" else "")
+                        for t, e in keys[::-1]], fontsize=8)
+    ax.set_xlim(0.0, 1.0)
+    ax.set_xlabel("AUROC. Filled = loop champion on the external set (bar = 95% CI); hollow = seed;\n"
+                  "| = loop champion on in-distribution Eval; dashed = chance. One row per split.", fontsize=8.5)
+    ax.grid(True, axis="x", color=GRID, lw=0.8)
     ax.set_axisbelow(True)
-    ax.legend(frameon=False, fontsize=7.5, loc="upper left", bbox_to_anchor=(1.01, 1.0))
-    ax.set_title("In-distribution gains vs transfer to other datasets", loc="left", fontweight="bold")
+    ax.set_title("External datasets: performance does not carry over", loc="left", fontweight="bold")
     save(fig, "fig11_transfer")
 
 

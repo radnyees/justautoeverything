@@ -116,6 +116,64 @@ def grouped_stratified_kfold(groups, strata, k, seed):
     return [(np.flatnonzero(f != i), np.flatnonzero(f == i)) for i in range(k)]
 
 
+# ---------------------------------------------------------------- id anonymization (audit)
+def anonymize(ds, seed):
+    """Replace every item id the solution can see (list items, DataFrame indexes, meta indexes,
+    the group ids passed as ctx["groups_train"], external items) by random tokens; callables in
+    ctx get the real ids back, so data loading still works. Splits, labels and reports keep the
+    real ids. Used to verify that no solution reads labels from ids such as 'aseeg:sz12'."""
+    rng = np.random.default_rng(10_000 + seed)
+    real = []
+
+    def ids_of(items):
+        return [str(i) for i in (items.index if hasattr(items, "iloc") else items)]
+    real += ids_of(ds["items"])
+    for ex in (ds.get("external") or {}).values():
+        real += ids_of(ex["items"])
+    real += [str(g) for g in ds["groups"]]
+    uniq = sorted(set(real))
+    nums = rng.permutation(len(uniq))
+    tok = {r: f"x{n:06d}" for r, n in zip(uniq, nums)}
+    inv = {t: r for r, t in tok.items()}
+
+    def swap_items(items):
+        if hasattr(items, "iloc"):
+            out = items.copy()
+            out.index = [tok[str(i)] for i in items.index]
+            return out
+        return [tok[str(i)] for i in items]
+
+    def swap_meta(meta):
+        if meta is None or not hasattr(meta, "index"):
+            return meta
+        if all(str(i) in tok for i in meta.index):
+            out = meta.copy()
+            out.index = [tok[str(i)] for i in meta.index]
+            return out
+        return meta
+
+    def untok(x):
+        if isinstance(x, str):
+            return inv.get(x, x)
+        if isinstance(x, (list, tuple, np.ndarray)) and len(x) and all(isinstance(v, str) for v in x):
+            return [inv.get(v, v) for v in x]
+        return x
+
+    def wrap(f):
+        def g(*a, **k):
+            return f(*[untok(v) for v in a], **{kk: untok(v) for kk, v in k.items()})
+        return g
+
+    ds = dict(ds)
+    ds["items"] = swap_items(ds["items"])
+    ds["meta"] = swap_meta(ds.get("meta"))
+    ds["groups_ctx"] = np.array([tok[str(g)] for g in ds["groups"]])
+    ds["ctx"] = {k: (wrap(v) if callable(v) else v) for k, v in (ds.get("ctx") or {}).items()}
+    ds["external"] = {name: dict(ex, items=swap_items(ex["items"]), meta=swap_meta(ex.get("meta")))
+                      for name, ex in (ds.get("external") or {}).items()}
+    return ds
+
+
 # ---------------------------------------------------------------- running a solution
 def load_solution(path):
     spec = importlib.util.spec_from_file_location("solution", path)
@@ -141,12 +199,17 @@ def run(solution_path):
     mode = os.environ.get("JAE_MODE", "dev")
     if ":" in mode:                              # e.g. "audit:10" = audit with 10 Eval chunks
         mode, os.environ["JAE_AUDIT_CHUNKS"] = mode.split(":", 1)
+    anon = mode.endswith("_anon")                # e.g. "eval_anon": item ids replaced by random tokens
+    if anon:
+        mode = mode[: -len("_anon")]
     sys.path.insert(0, str(ROOT / "projects" / project))
     sys.path.insert(0, str(ROOT))
     prepare = importlib.import_module("prepare")
     cfg = prepare.TASKS[task]
     t0 = time.time()
     ds = prepare.load(task)                      # dict: items, y, groups, strata, meta?, ctx?, external?
+    if anon:
+        ds = anonymize(ds, seed)
     sol = load_solution(solution_path)
     n = len(ds["groups"])
     dev_idx, eval_idx = grouped_stratified_split(ds["groups"], ds["strata"], EVAL_FRAC, seed)
@@ -187,7 +250,8 @@ def run(solution_path):
         F = featurize(both)
         F_dev, F_ev = take(F, np.arange(len(dev_idx))), take(F, np.arange(len(dev_idx), len(both)))
         ctx = dict(ctx_base, meta_train=take(ds.get("meta"), dev_idx),
-                   meta_test=take(ds.get("meta"), eval_idx), groups_train=take(ds["groups"], dev_idx))
+                   meta_test=take(ds.get("meta"), eval_idx),
+                   groups_train=take(ds.get("groups_ctx", ds["groups"]), dev_idx))
         pred = sol.fit_predict(F_dev, take(ds["y"], dev_idx), F_ev, ctx)
         y_ev = take(ds["y"], eval_idx)
         sites = take(ds.get("sites"), eval_idx)

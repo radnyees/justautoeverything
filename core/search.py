@@ -1,7 +1,9 @@
 """
-core/search.py -- NON-LLM search baseline with the loop's budget: Optuna TPE over a hand-written,
+core/search.py -- search baseline with the loop's budget: Optuna TPE over a hand-written,
 parameterized pipeline (projects/<p>/baselines/{template,space}.py), 20 Dev evaluations per
-task x split, same harness, same Dev CV, same per-candidate time limit as the loop.
+task x split, same harness, same Dev CV, same per-candidate time limit as the loop. The optimizer
+uses no LLM, but the search spaces were written AFTER the loop runs and include feature families the
+loop found, so the baseline is informed by the loop's findings (stronger than an independent search).
 
 Each trial's code is "PARAMS = {...}" + template.py, scored on Dev exactly like a loop candidate.
 Champion = best of the seed and the trials (the seed wins ties, as in keep-if-better), then scored

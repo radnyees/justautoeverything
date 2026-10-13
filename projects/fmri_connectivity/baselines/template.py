@@ -1,4 +1,5 @@
-"""Non-LLM search baseline template (PARAMS is prepended by core/search.py)."""
+"""Search-baseline template (PARAMS is prepended by core/search.py). Written after the loop runs;
+the search space includes feature families the loop found (loop-informed baseline)."""
 import numpy as np
 from sklearn.covariance import LedoitWolf
 from sklearn.linear_model import LogisticRegression, RidgeClassifier

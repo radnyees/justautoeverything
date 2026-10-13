@@ -9,6 +9,10 @@ Tasks
                four stool 16S studies (Gevers 2014 RISK, Alm, Engstrand, Huttenhower). OTU tables
                are merged on the RDP taxonomy string (OTU ids are study-specific), so columns
                are taxonomy lineages without the d__denovoN suffix. Split/strata by study+label.
+               v3 (2026-10-13): STOOL samples only (the v2 task also contained 94 Huttenhower
+               biopsies and 28 Engstrand tissue samples) and grouped by person -- by twin PAIR in
+               the Engstrand twin study -- so repeated or related samples never cross Dev/Eval
+               (v2 runs: archive/v2_ibd_pooled_with_biopsies/).
                (Gevers alone has only 16 stool controls -- too few to evaluate; see
                archive/ibd_gevers_stool_only/.)
 crc items = DataFrame of RAW OTU counts (samples x OTUs); columns are RDP taxonomy strings
@@ -36,6 +40,26 @@ def _study(name):
     return c.astype(np.int32), m
 
 
+def _is_stool(m):
+    """Stool samples only (biopsy/tissue samples removed; v3 of ibd_pooled)."""
+    for col in ("sample_location", "SampleType"):
+        if col in m:
+            return m[col].astype(str).str.lower().eq("stool")
+    return pd.Series(True, index=m.index)
+
+
+def _ibd_group(st, m):
+    """Grouping unit for the pooled IBD splits: the person, or the twin PAIR in the Engstrand twin
+    study (Willing 2010: ids '<dx>-p<pair>-<f|i|dc><person>'), so related or repeated samples never
+    cross Dev/Eval."""
+    if "subject" in m:
+        return m["subject"].astype(str).values
+    ids = pd.Series(m.index.astype(str), index=m.index)
+    if st == "ibd_engstrand_maxee":
+        return ids.str.extract(r"p(\d+)", expand=False).radd("pair").values
+    return ids.str.replace(r"[A-Za-z]+$", "", regex=True).values       # '7094C' / '7094A' -> '7094'
+
+
 def _binary(name, case, controls):
     c, m = _study(name)
     keep = m["DiseaseState"].isin([case, *controls]).values
@@ -56,14 +80,13 @@ def load(task):
         parts = []
         for st in ["ibd_gevers_2014", "ibd_alm", "ibd_engstrand_maxee", "ibd_huttenhower"]:
             c, m = _study(st)
-            keep = m["DiseaseState"].isin(["CD", "UC", "H", "nonIBD"]).values
+            keep = (m["DiseaseState"].isin(["CD", "UC", "H", "nonIBD"]) & _is_stool(m)).values
             c, m = c.loc[keep], m.loc[keep]
             c.columns = [col.rsplit(";d__", 1)[0] for col in c.columns]   # drop study-specific OTU id
             c = c.T.groupby(level=0).sum().T
             c.index = [f"{st}:{i}" for i in c.index]
-            subj = (m["subject"] if "subject" in m else pd.Series(m.index, index=m.index)).astype(str)
             parts.append((c, (m["DiseaseState"].isin(["CD", "UC"])).astype(int).values,
-                          np.array([f"{st}:{x}" for x in subj]), st))
+                          np.array([f"{st}:{x}" for x in _ibd_group(st, m)]), st))
         c = pd.concat([p[0] for p in parts], axis=0).fillna(0).astype(np.int32)
         y = np.concatenate([p[1] for p in parts])
         g = np.concatenate([p[2] for p in parts])

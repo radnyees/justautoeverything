@@ -1,4 +1,5 @@
-"""Non-LLM search baseline template (PARAMS is prepended by core/search.py)."""
+"""Search-baseline template (PARAMS is prepended by core/search.py). Written after the loop runs;
+the search space includes feature families the loop found (loop-informed baseline)."""
 import numpy as np
 from joblib import Parallel, delayed
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
