@@ -1,0 +1,164 @@
+{
+ "seed": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_bandpower",
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.8718398942698009,
+  "score_joint": 0.8718398942698009,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ },
+ "champion": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_asym_feats",
+    "_bipolar_feats",
+    "_bipolar_matrix",
+    "_complexity_feats",
+    "_cov_feats",
+    "_find",
+    "_pair_indices",
+    "_spectral_feats",
+    "_temporal_var_feats",
+    "_waveform_feats",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "_complexity_feats",
+     "line": 245,
+     "code": "lk = lk - lk.mean()"
+    },
+    {
+     "function": "_complexity_feats",
+     "line": 250,
+     "code": "np.percentile(pes[1], 10, axis=1),"
+    },
+    {
+     "function": "_complexity_feats",
+     "line": 251,
+     "code": "np.median(hfd, axis=1), np.percentile(hfd, 10, axis=1),"
+    },
+    {
+     "function": "_cov_feats",
+     "line": 146,
+     "code": "M = logC.mean(axis=0)                              # Log-Euclidean mean (artifact-robust)"
+    },
+    {
+     "function": "_temporal_var_feats",
+     "line": 168,
+     "code": "q90, q50 = np.percentile(logrel, [90, 50], axis=1)"
+    },
+    {
+     "function": "_temporal_var_feats",
+     "line": 170,
+     "code": "t90, t10 = np.percentile(logtot, [90, 10], axis=1)"
+    },
+    {
+     "function": "_waveform_feats",
+     "line": 200,
+     "code": "np.median(lkurt, axis=1), np.percentile(lkurt, 90, axis=1),"
+    }
+   ],
+   "batch_relative_outputs": [
+    {
+     "function": "_rank01",
+     "line": 280,
+     "code": "return (rankdata(p) - 0.5) / len(p)"
+    }
+   ]
+  },
+  "score": 0.9166194656848863,
+  "score_joint": 0.9260549419427926,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ },
+ "seed_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_bandpower",
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.8718398942698009,
+  "score_joint": 0.8718398942698009,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ },
+ "champion_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_asym_feats",
+    "_bipolar_feats",
+    "_bipolar_matrix",
+    "_complexity_feats",
+    "_cov_feats",
+    "_find",
+    "_pair_indices",
+    "_spectral_feats",
+    "_temporal_var_feats",
+    "_waveform_feats",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "_complexity_feats",
+     "line": 245,
+     "code": "lk = lk - lk.mean()"
+    },
+    {
+     "function": "_complexity_feats",
+     "line": 250,
+     "code": "np.percentile(pes[1], 10, axis=1),"
+    },
+    {
+     "function": "_complexity_feats",
+     "line": 251,
+     "code": "np.median(hfd, axis=1), np.percentile(hfd, 10, axis=1),"
+    },
+    {
+     "function": "_cov_feats",
+     "line": 146,
+     "code": "M = logC.mean(axis=0)                              # Log-Euclidean mean (artifact-robust)"
+    },
+    {
+     "function": "_temporal_var_feats",
+     "line": 168,
+     "code": "q90, q50 = np.percentile(logrel, [90, 50], axis=1)"
+    },
+    {
+     "function": "_temporal_var_feats",
+     "line": 170,
+     "code": "t90, t10 = np.percentile(logtot, [90, 10], axis=1)"
+    },
+    {
+     "function": "_waveform_feats",
+     "line": 200,
+     "code": "np.median(lkurt, axis=1), np.percentile(lkurt, 90, axis=1),"
+    }
+   ],
+   "batch_relative_outputs": [
+    {
+     "function": "_rank01",
+     "line": 280,
+     "code": "return (rankdata(p) - 0.5) / len(p)"
+    }
+   ]
+  },
+  "score": 0.9235721703011421,
+  "score_joint": 0.9260455017464364,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ }
+}

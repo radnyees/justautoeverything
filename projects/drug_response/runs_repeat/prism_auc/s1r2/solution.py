@@ -1,13 +1,15 @@
 """Shared ridge on top-5,000 variance genes, blended with a per-drug ridge on genes screened by
-correlation with that drug's AUC inside the training fold. The screening correlation of each
-drug is smoothed with the mean correlation vector of its MOA/target neighbours (drug-similarity
-sharing). Besides hard top-k screens, a soft screen weights each of the top-1000 genes by
-(|r| / mean|r|)^p. The (screen, penalty, smoothing, blend weight) option is chosen PER DRUG,
-shrunk toward the global optimum, with the shrinkage chosen by cross-fitting over inner folds.
-NEW: prediction-level drug sharing -- each drug's z-scored prediction is mixed with the mean
-prediction of its neighbour drugs (MOA/target neighbours, or drugs whose training AUC profiles
-correlate strongly): (1-eta) z_j + eta mean_nb z. Neighbour type and eta are chosen by
-cross-fitting over the inner folds; eta=0 recovers the previous model exactly."""
+correlation with that drug's AUC inside the training fold. Screening variants: raw correlation,
+correlation smoothed with MOA/target neighbours, a residual variant that screens and fits the
+per-drug ridge on the shared ridge's training residuals alpha (K + alpha I)^-1 y and adds the
+result to the base prediction, and (NEW) a multi-task-target variant "mt" that keeps the
+MOA-smoothed screen but fits the ridge to the drug's standardized AUC averaged with its MOA
+neighbours' mean standardized AUC (shares the eigendecomposition with "moa", so nearly free).
+Besides hard top-k screens, a soft screen weights each of the top-1000 genes by
+(|r| / mean|r|)^p. The (screen, penalty, variant, blend weight) option is chosen PER DRUG, shrunk
+toward the global optimum, with the shrinkage chosen by cross-fitting over inner folds.
+Prediction-level drug sharing: each drug's z-scored prediction is mixed with the mean prediction
+of its neighbour drugs, with neighbour type and eta chosen by cross-fitting."""
 import warnings
 
 import numpy as np
@@ -18,7 +20,8 @@ N_BASE = 5000
 ALPHA_BASE = 5000.0
 SCREENS = ((50, 0), (200, 0), (1000, 0), (1000, 1), (1000, 2))  # (k, soft-weight power p)
 LAMS = (1.0, 5.0, 25.0)
-GAMMAS = (0.0, 1.0)
+SCREEN_VARIANTS = ("raw", "moa", "res")
+VARIANTS = ("raw", "moa", "res", "mt")
 WEIGHTS = (0.0, 0.25, 0.5, 0.75, 1.0)
 STRATS = [("all", 1.0)] + [(m, s) for m in ("w", "all") for s in (0.0, 0.25, 0.5, 0.75)]
 SHARES = [(None, 0.0)] + [(k, e) for k in ("moa", "corr") for e in (0.15, 0.3, 0.5)]
@@ -111,34 +114,48 @@ def _smooth(Z, W, has, eta):
 
 
 def _models(Xtr_raw, Ytr, Xte_raw, An, has_nb):
-    """Returns ymu, baseline deviations (n_te x D), dict of screened deviations per (screen, lam, g)."""
+    """Returns ymu, baseline deviations (n_te x D), dict of screened deviations per (screen, lam, variant)."""
     Ztr, Zte = _std(Xtr_raw, Xte_raw)
     ymu = np.nan_to_num(np.nanmean(Ytr, 0))
     Yc = np.where(np.isnan(Ytr), ymu, Ytr) - ymu
     n, D = Yc.shape
     B = Ztr[:, :N_BASE]
-    base = (Zte[:, :N_BASE] @ B.T) @ np.linalg.solve(B @ B.T + ALPHA_BASE * np.eye(n), Yc)
+    Acoef = np.linalg.solve(B @ B.T + ALPHA_BASE * np.eye(n), Yc)
+    base = (Zte[:, :N_BASE] @ B.T) @ Acoef
+    Res = ALPHA_BASE * Acoef  # training residuals of the shared kernel ridge
+    Res = Res - Res.mean(0)
+
+    # multi-task target: drug's standardized AUC averaged with its MOA neighbours' mean
     ysd = Yc.std(0)
     ysd[ysd < 1e-12] = 1.0
-    C = (Ztr.T @ Yc) / (n * ysd)  # genes x drugs correlations
+    Yz = Yc / ysd
+    Ymt = 0.5 * (Yz + Yz @ An.T) * ysd
+
+    def _corr(T):
+        sd = T.std(0)
+        sd[sd < 1e-12] = 1.0
+        return (Ztr.T @ T) / (n * sd)  # genes x drugs correlations
+
+    C = _corr(Yc)
     Cnb = C @ An.T
+    S = {"raw": np.abs(C), "moa": np.abs((C + Cnb) / 2.0), "res": np.abs(_corr(Res))}
+    targets = {"raw": Yc, "moa": Yc, "res": Res, "mt": Ymt}
     kmax = max(k for k, _ in SCREENS)
-    orders, scores = {}, {}
-    for g in GAMMAS:
-        S = np.abs((C + g * Cnb) / (1.0 + g)) if g > 0 else np.abs(C)
-        orders[g] = np.argsort(-S, axis=0)[:kmax]
-        scores[g] = S
-    scr = {(s, l, g): np.zeros((Zte.shape[0], D)) for s in SCREENS for l in LAMS for g in GAMMAS}
+    orders = {v: np.argsort(-S[v], axis=0)[:kmax] for v in SCREEN_VARIANTS}
+    scr = {(s, l, v): np.zeros((Zte.shape[0], D)) for s in SCREENS for l in LAMS for v in VARIANTS}
     for j in range(D):
-        for g in GAMMAS:
-            if g > 0 and not has_nb[j]:
+        for v in SCREEN_VARIANTS:
+            if v == "moa" and not has_nb[j]:
                 for s in SCREENS:
                     for l in LAMS:
-                        scr[(s, l, g)][:, j] = scr[(s, l, 0.0)][:, j]
+                        scr[(s, l, "moa")][:, j] = scr[(s, l, "raw")][:, j]
+                        scr[(s, l, "mt")][:, j] = scr[(s, l, "raw")][:, j]
                 continue
-            idx = orders[g][:, j]
+            idx = orders[v][:, j]
             Xa, Xb = Ztr[:, idx], Zte[:, idx]
-            sv = scores[g][idx, j]
+            sv = S[v][idx, j]
+            off = base[:, j] if v == "res" else 0.0
+            outs = [v, "mt"] if v == "moa" else [v]
             for (k, p) in SCREENS:
                 Xk, Xbk = Xa[:, :k], Xb[:, :k]
                 if p > 0:
@@ -152,9 +169,11 @@ def _models(Xtr_raw, Ytr, Xte_raw, An, has_nb):
                     Kt = Xbk @ Xk.T
                 w, V = np.linalg.eigh(Kk)
                 w = np.clip(w, 0, None)
-                Vy = V.T @ Yc[:, j]
-                for l in LAMS:
-                    scr[((k, p), l, g)][:, j] = Kt @ (V @ (Vy / (w + l * k)))
+                KtV = Kt @ V
+                for vv in outs:
+                    Vy = V.T @ targets[vv][:, j]
+                    for l in LAMS:
+                        scr[((k, p), l, vv)][:, j] = off + KtV @ (Vy / (w + l * k))
     return ymu, base, scr
 
 
@@ -196,8 +215,8 @@ def fit_predict(F_train, y_train, F_test, ctx):
         pass
     An, has_nb = _neighbors(drugs, D)
 
-    # grouped inner CV out-of-fold predictions for every (screen, lam, gamma)
-    configs = [(s, l, g) for s in SCREENS for l in LAMS for g in GAMMAS]
+    # grouped inner CV out-of-fold predictions for every (screen, lam, variant)
+    configs = [(s, l, v) for s in SCREENS for l in LAMS for v in VARIANTS]
     oof_b = np.zeros_like(Y)
     oof_s = {c: np.zeros_like(Y) for c in configs}
     vas = []

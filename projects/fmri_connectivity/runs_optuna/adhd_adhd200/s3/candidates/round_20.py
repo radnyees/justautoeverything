@@ -1,4 +1,4 @@
-PARAMS = {'atlas': 'cc400', 'strategy': 1, 'conn': 'tangent', 'site_std': False, 'model': 'ridge', 'C': 0.6823440498807004}
+PARAMS = {'atlas': 'cc200', 'strategy': 1, 'conn': 'tangent', 'site_std': False, 'model': 'lr_l2', 'C': 0.217302577645308}
 """Non-LLM search baseline template (PARAMS is prepended by core/search.py)."""
 import numpy as np
 from sklearn.covariance import LedoitWolf

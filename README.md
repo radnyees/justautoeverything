@@ -56,13 +56,34 @@ dataset and literature references: [`docs/references.md`](docs/references.md).
    `baseline.json`, `solution.py` (champion), `final/` (Eval predictions) and `final_scores.json`
    sit next to it.
 
+7. **Robustness analyses** (`results/robustness/`, figures 7-12; overview in
+   `results/robustness/README.md`):
+   * **Same-budget baselines** (same harness, splits, Dev CV, time limit, 20 Dev evaluations,
+     keep-if-better on Dev, Eval scored once): *one-shot LLM* (round 1 of best-of-20), *best-of-20
+     LLM without feedback* (`core/loop.py --strategy best_of_n`: every round sees only the brief
+     and the seed), and *Optuna TPE* over a hand-written parameterized pipeline per project
+     (`core/search.py`, `projects/*/baselines/{template,space}.py`; no LLM).
+   * **Corrected statistics** (`core/stats.py`): task-level paired bootstrap that resamples
+     subjects from the union of the 3 overlapping Eval sets; two-sided p with Holm and BH across
+     the 12 tasks; pooled gain over the 11 AUROC tasks (equal-weight mean, t-interval across
+     tasks; DerSimonian-Laird random effects as secondary).
+   * **Run-to-run variance**: 2 extra independent loops on split 1 for 7 cheaper tasks
+     (`runs_repeat/`, run names `s1r2`, `s1r3`).
+   * **Shortcuts** (`core/shortcuts.py`): shortcut-only models (site/study, age/sex, motion) and the
+     archived v1 champions rescored with the v2 within-site metric.
+   * **Transduction audit** (`core/audit.py`, harness modes `audit`/`audit_ref`): do features
+     depend on the batch, and does each seed/champion keep its Eval score when Eval items arrive
+     in chunks (alone, or inside a dev-pool reference batch)?
+
 ## Layout
 
 ```
 core/            harness, loop, Modal backend, final scoring, report, remote orchestration
 projects/<p>/    prepare.py (fixed), project.json (tasks), program.md (LLM brief), seeds/,
-                 data/ (download + preprocessing scripts), runs/ (all loop records), archive/
-results/         SUMMARY.md, summary_*.csv, figures/
+                 data/ (download + preprocessing scripts), runs/ (all loop records), archive/,
+                 baselines/ (Optuna template + search space), runs_bestof20/, runs_optuna/,
+                 runs_repeat/ (baseline and repeat records, same layout as runs/)
+results/         SUMMARY.md, summary_*.csv, STATS.md, stats_*.{csv,json}, robustness/, figures/
 docs/            references.md (datasets, baselines, licences)
 ```
 
@@ -76,6 +97,14 @@ docs/            references.md (datasets, baselines, licences)
 ./core/run.sh python core/remote.py sync <project>
 ./core/run.sh python core/final.py <project> <task>                                # Eval, once
 python core/report.py                                                              # tables + figures
+# robustness
+./core/run.sh python core/remote.py launch <p> "<tasks>" "1 2 3" strategy=best_of_n subdir=runs_bestof20
+./core/run.sh python core/remote.py launch <p> "<tasks>" "1" subdir=runs_repeat repeats="2 3"
+./core/run_search_all.sh                                                           # Optuna baseline
+./core/run_final_baselines.sh {bestof20|optuna|repeat} "<p>:<task> ..."            # Eval, once
+./core/run_audit_all.sh                                                            # transduction audit
+./core/run.sh python core/prep.py core/shortcuts.py                                # shortcut models
+./core/run.sh python core/stats.py && python core/report_robustness.py
 ```
 
 Data are not redistributed (several datasets forbid it, e.g. the TDBRAIN DUA and TUH/NEDC

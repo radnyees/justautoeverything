@@ -1,0 +1,24 @@
+{
+  "project": "eeg_psych",
+  "task": "adhd_tdbrain",
+  "seed": 1,
+  "run": "s1",
+  "subdir": "runs_optuna",
+  "solution": "solution.py",
+  "dev_seed": 0.680958,
+  "dev_champion": 0.905825,
+  "eval_seed": 0.8384615384615385,
+  "eval_champion": 0.9666666666666667,
+  "dev_gain": 0.22486700000000004,
+  "eval_gain": 0.1282051282051282,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.08415522447814641,
+    "ci95": [
+      -0.010267857142857325,
+      0.3122319617502172
+    ],
+    "p_one_sided": 0.0395
+  },
+  "external": {}
+}

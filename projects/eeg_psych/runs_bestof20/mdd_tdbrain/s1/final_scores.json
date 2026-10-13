@@ -1,0 +1,39 @@
+{
+  "project": "eeg_psych",
+  "task": "mdd_tdbrain",
+  "seed": 1,
+  "run": "s1",
+  "subdir": "runs_bestof20",
+  "solution": "solution.py",
+  "dev_seed": 0.822456,
+  "dev_champion": 0.870022,
+  "eval_seed": 0.870888157894737,
+  "eval_champion": 0.930921052631579,
+  "dev_gain": 0.047566,
+  "eval_gain": 0.060032894736842035,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.042942266783236975,
+    "ci95": [
+      -0.017199017199017178,
+      0.15398314424049717
+    ],
+    "p_one_sided": 0.0745
+  },
+  "external": {
+    "mumtaz": {
+      "seed": 0.25,
+      "champion": 0.2833333333333333,
+      "gain": 0.033333333333333326,
+      "bootstrap": {
+        "n_boot": 2000,
+        "boot_se": 0.06378048396564431,
+        "ci95": [
+          -0.09156039437177971,
+          0.15746133207070703
+        ],
+        "p_one_sided": 0.303
+      }
+    }
+  }
+}

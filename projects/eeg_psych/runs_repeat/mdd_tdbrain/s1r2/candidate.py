@@ -1,9 +1,10 @@
 """Log relative band power (delta/theta/alpha/beta/gamma) per channel from Welch PSD of each
-available condition + per-channel aperiodic (1/f) exponent (log-log linear fit, alpha range
-excluded) + per-channel individual alpha frequency (centre of gravity of the 7-13 Hz PSD)
-+ per-channel Higuchi fractal dimension of the 1-45 Hz signal + per-channel normalized spectral
-entropy (1-45 Hz PSD) and permutation entropy (order 3, ~12 ms lag, 1-45 Hz signal)
-+ per-channel wPLI node strength
+available condition + inter-hemispheric asymmetry (log absolute band power right minus left for
+homologous 10-20 pairs, all 5 bands; gain-invariant) + per-channel aperiodic (1/f) exponent
+(log-log linear fit, alpha range excluded) + per-channel individual alpha frequency (centre of
+gravity of the 7-13 Hz PSD) + per-channel Higuchi fractal dimension of the 1-45 Hz signal
++ per-channel normalized spectral entropy (1-45 Hz PSD) and permutation entropy (order 3, ~12 ms
+lag, 1-45 Hz signal) + per-channel wPLI node strength
 (theta, alpha, beta) + per-channel temporal variability (IQR across 2 s epochs) of log relative
 theta and alpha power (vigilance stability) + per-channel DFA exponent of theta and alpha
 amplitude envelopes (long-range temporal correlations) + per-channel node strength of
@@ -32,12 +33,22 @@ AEC_BANDS = [(4, 8), (8, 13), (13, 30)]
 MS_K = 4
 MS_NFEAT = 4 * MS_K + MS_K * (MS_K - 1)
 N_PER_CH = 5                                   # slope, paf, hfd, spectral entropy, perm entropy
+ASYM_PAIRS = [("Fp1", "Fp2"), ("F3", "F4"), ("F7", "F8"), ("C3", "C4"), ("T7", "T8"),
+              ("T3", "T4"), ("P3", "P4"), ("P7", "P8"), ("T5", "T6"), ("O1", "O2")]
+
+
+def _pairs(channels):
+    idx = {c.lower(): i for i, c in enumerate(channels)}
+    return [(idx[l.lower()], idx[r.lower()]) for l, r in ASYM_PAIRS
+            if l.lower() in idx and r.lower() in idx]
 
 
 def _spectral(x, fs):
     f, p = welch(x, fs=fs, nperseg=int(2 * fs), axis=-1)
     tot = p[:, (f >= 1) & (f <= 45)].sum(axis=1, keepdims=True) + 1e-12
-    bp = np.log(np.stack([p[:, (f >= a) & (f < b)].sum(axis=1) for a, b in BANDS], axis=1) / tot)
+    absb = np.stack([p[:, (f >= a) & (f < b)].sum(axis=1) for a, b in BANDS], axis=1)
+    bp = np.log(absb / tot)
+    labs = np.log(absb + 1e-12)                # ch x bands, log absolute power
     # aperiodic exponent: log-log linear fit outside the alpha peak and below line noise
     m = ((f >= 2) & (f < 7)) | ((f > 14) & (f <= 40))
     lf = np.log10(f[m])
@@ -53,7 +64,7 @@ def _spectral(x, fs):
     pm = p[:, (f >= 1) & (f <= 45)]
     q = pm / (pm.sum(axis=1, keepdims=True) + 1e-12)
     sen = -(q * np.log(q + 1e-12)).sum(axis=1) / np.log(q.shape[1])
-    return bp.ravel(), slope, paf, sen
+    return bp.ravel(), slope, paf, sen, labs
 
 
 def _hfd_pe(x, fs):
@@ -258,18 +269,22 @@ def _ms_feats(pk, maps, g, N, T, fs):
 def featurize(items, ctx):
     fs = ctx["fs"]
     conds = ctx["conditions"]
+    pairs = _pairs(ctx["channels"])
+    li = np.array([p[0] for p in pairs], dtype=int)
+    ri = np.array([p[1] for p in pairs], dtype=int)
     blocks = {c: ctx["load_eeg"](items, c) for c in conds}
     rng = np.random.RandomState(0)
     base, covs, ms_in, pool = [], [], [], []
     for i in range(len(items)):
-        bp, sl, pf, fd, se, pe, wp, vg, df, ae, cv, mi = ([] for _ in range(12))
+        bp, asy, sl, pf, fd, se, pe, wp, vg, df, ae, cv, mi = ([] for _ in range(13))
         for c in conds:
             x = blocks[c][i]
             if x is None:                      # missing condition -> fall back to eyes closed
                 x = blocks[conds[0]][i]
             x64 = x.astype(np.float64)
-            b, s, a, e = _spectral(x64, fs)
+            b, s, a, e, labs = _spectral(x64, fs)
             bp.append(b)
+            asy.append((labs[ri] - labs[li]).ravel())
             sl.append(s)
             pf.append(a)
             se.append(e)
@@ -291,7 +306,7 @@ def featurize(items, ctx):
                 keep = np.sort(rng.choice(keep, 300, replace=False))
             if len(keep):
                 pool.append(maps[keep].astype(np.float64))
-        base.append(np.concatenate(bp + sl + pf + fd + se + pe + wp + vg + df + ae))
+        base.append(np.concatenate(bp + asy + sl + pf + fd + se + pe + wp + vg + df + ae))
         covs.append(np.concatenate(cv))
         ms_in.append(mi)
     M = np.vstack(pool)
@@ -307,7 +322,9 @@ def featurize(items, ctx):
 def _split(F, ctx):
     n_ch = len(ctx["channels"])
     n_cond = len(ctx["conditions"])
+    n_pairs = len(_pairs(ctx["channels"]))
     n_bp = (n_ch * len(BANDS) * n_cond
+            + n_pairs * len(BANDS) * n_cond
             + (N_PER_CH + len(WPLI_BANDS) + len(VIG_BANDS) + len(DFA_BANDS) + len(AEC_BANDS))
             * n_ch * n_cond
             + MS_NFEAT * n_cond)

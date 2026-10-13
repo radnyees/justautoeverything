@@ -1,0 +1,1 @@
+{"static": {"has_featurize": true, "functions": ["_lw_cov", "_pick_atlas", "featurize"], "hits": [{"function": "_lw_cov", "line": 20, "code": "c = LedoitWolf(assume_centered=True).fit(x).covariance_"}], "batch_relative_outputs": []}, "score": 0.6493398937871367, "score_joint": 0.6493398937871367, "feat_max_rel_diff": 0.0, "n_chunks": 10}

@@ -1,0 +1,24 @@
+{
+  "project": "drug_response",
+  "task": "prism_auc",
+  "seed": 3,
+  "run": "s3",
+  "subdir": "runs_optuna",
+  "solution": "solution.py",
+  "dev_seed": 0.152982,
+  "dev_champion": 0.155856,
+  "eval_seed": 0.12198881006759024,
+  "eval_champion": 0.11395330220906104,
+  "dev_gain": 0.0028739999999999877,
+  "eval_gain": -0.008035507858529203,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.007267355472092423,
+    "ci95": [
+      -0.022340635116543356,
+      0.005711482304096154
+    ],
+    "p_one_sided": 0.863
+  },
+  "external": {}
+}

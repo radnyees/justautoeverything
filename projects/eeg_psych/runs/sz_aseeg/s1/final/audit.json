@@ -1,0 +1,218 @@
+{
+ "seed": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_bandpower",
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.6987179487179488,
+  "score_joint": 0.6987179487179488,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_alpha_dfa",
+    "_band_cov",
+    "_bandpower",
+    "_canonical_order",
+    "_fun_spd",
+    "_microstates",
+    "_mod_kmeans",
+    "_ms_features",
+    "_ms_prep",
+    "_spec_param",
+    "_tangent",
+    "_unit",
+    "_wpli_strength",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "_alpha_dfa",
+     "line": 88,
+     "code": "x = x - x.mean(axis=0, keepdims=True)              # common average reference"
+    },
+    {
+     "function": "_band_cov",
+     "line": 119,
+     "code": "x = x - x.mean(axis=0, keepdims=True)              # common average reference"
+    },
+    {
+     "function": "_band_cov",
+     "line": 127,
+     "code": "ep = ep[v <= np.percentile(v, 90)] if nep >= 10 else ep"
+    },
+    {
+     "function": "_band_cov",
+     "line": 133,
+     "code": "L = np.einsum(\"eij,ej,ekj->eik\", V, np.log(w), V).mean(axis=0)"
+    },
+    {
+     "function": "_canonical_order",
+     "line": 214,
+     "code": "P = P - P.mean(axis=0)"
+    },
+    {
+     "function": "_microstates",
+     "line": 259,
+     "code": "keep = pk[g <= np.percentile(g, 95)]           # drop artifact-dominated peaks"
+    },
+    {
+     "function": "_ms_features",
+     "line": 248,
+     "code": "dur.append(np.log(lengths[m].mean() / fs if m.any() else 1.0 / fs))"
+    },
+    {
+     "function": "_ms_prep",
+     "line": 161,
+     "code": "x = x - x.mean(axis=0, keepdims=True)              # average reference"
+    },
+    {
+     "function": "_ms_prep",
+     "line": 164,
+     "code": "gfp = x.std(axis=0)"
+    },
+    {
+     "function": "_spec_param",
+     "line": 61,
+     "code": "x = x - x.mean(axis=0, keepdims=True)              # common average reference"
+    },
+    {
+     "function": "_wpli_strength",
+     "line": 36,
+     "code": "x = x - x.mean(axis=0, keepdims=True)              # common average reference"
+    },
+    {
+     "function": "_wpli_strength",
+     "line": 48,
+     "code": "num = np.abs(im.mean(axis=0))"
+    },
+    {
+     "function": "_wpli_strength",
+     "line": 49,
+     "code": "den = np.abs(im).mean(axis=0) + 1e-12"
+    }
+   ],
+   "batch_relative_outputs": []
+  },
+  "score": 0.7371794871794872,
+  "score_joint": 0.7435897435897436,
+  "feat_max_rel_diff": 0.2375064800850118,
+  "n_chunks": 20
+ },
+ "seed_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_bandpower",
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.6987179487179488,
+  "score_joint": 0.6987179487179488,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_alpha_dfa",
+    "_band_cov",
+    "_bandpower",
+    "_canonical_order",
+    "_fun_spd",
+    "_microstates",
+    "_mod_kmeans",
+    "_ms_features",
+    "_ms_prep",
+    "_spec_param",
+    "_tangent",
+    "_unit",
+    "_wpli_strength",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "_alpha_dfa",
+     "line": 88,
+     "code": "x = x - x.mean(axis=0, keepdims=True)              # common average reference"
+    },
+    {
+     "function": "_band_cov",
+     "line": 119,
+     "code": "x = x - x.mean(axis=0, keepdims=True)              # common average reference"
+    },
+    {
+     "function": "_band_cov",
+     "line": 127,
+     "code": "ep = ep[v <= np.percentile(v, 90)] if nep >= 10 else ep"
+    },
+    {
+     "function": "_band_cov",
+     "line": 133,
+     "code": "L = np.einsum(\"eij,ej,ekj->eik\", V, np.log(w), V).mean(axis=0)"
+    },
+    {
+     "function": "_canonical_order",
+     "line": 214,
+     "code": "P = P - P.mean(axis=0)"
+    },
+    {
+     "function": "_microstates",
+     "line": 259,
+     "code": "keep = pk[g <= np.percentile(g, 95)]           # drop artifact-dominated peaks"
+    },
+    {
+     "function": "_ms_features",
+     "line": 248,
+     "code": "dur.append(np.log(lengths[m].mean() / fs if m.any() else 1.0 / fs))"
+    },
+    {
+     "function": "_ms_prep",
+     "line": 161,
+     "code": "x = x - x.mean(axis=0, keepdims=True)              # average reference"
+    },
+    {
+     "function": "_ms_prep",
+     "line": 164,
+     "code": "gfp = x.std(axis=0)"
+    },
+    {
+     "function": "_spec_param",
+     "line": 61,
+     "code": "x = x - x.mean(axis=0, keepdims=True)              # common average reference"
+    },
+    {
+     "function": "_wpli_strength",
+     "line": 36,
+     "code": "x = x - x.mean(axis=0, keepdims=True)              # common average reference"
+    },
+    {
+     "function": "_wpli_strength",
+     "line": 48,
+     "code": "num = np.abs(im.mean(axis=0))"
+    },
+    {
+     "function": "_wpli_strength",
+     "line": 49,
+     "code": "den = np.abs(im).mean(axis=0) + 1e-12"
+    }
+   ],
+   "batch_relative_outputs": []
+  },
+  "score": 0.7371794871794872,
+  "score_joint": 0.7435897435897436,
+  "feat_max_rel_diff": 0.2375064800850118,
+  "n_chunks": 20
+ }
+}

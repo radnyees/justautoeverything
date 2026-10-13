@@ -1,0 +1,24 @@
+{
+  "project": "fmri_connectivity",
+  "task": "adhd_adhd200",
+  "seed": 1,
+  "run": "s1",
+  "subdir": "runs_bestof20",
+  "solution": "solution.py",
+  "dev_seed": 0.593618,
+  "dev_champion": 0.619134,
+  "eval_seed": 0.45307625948930297,
+  "eval_champion": 0.6266330985204263,
+  "dev_gain": 0.025515999999999983,
+  "eval_gain": 0.1735568390311233,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.0486101632122569,
+    "ci95": [
+      0.058997637505917515,
+      0.24414502091076595
+    ],
+    "p_one_sided": 0.0005
+  },
+  "external": {}
+}

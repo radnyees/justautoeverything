@@ -1,6 +1,6 @@
-"""Genus-level relative abundance + aggregate CRC oral-pathobiont marker features + depth-normalized
-alpha diversity; rank-averaged ensemble of a random forest (genera + markers + diversity) and an L2
-logistic regression on multi-resolution (genus + family) log-abundances."""
+"""Genus-level relative abundance + aggregate CRC oral-pathobiont marker features;
+rank-averaged ensemble of a random forest (genera + markers) and an L2 logistic regression
+on multi-resolution (genus + family) log-abundances plus alpha-diversity summaries."""
 import numpy as np
 import pandas as pd
 from scipy.special import gammaln
@@ -17,8 +17,8 @@ EXT_MARKERS = CORE_MARKERS + ["g__Gemella", "g__Solobacterium", "g__Prevotella",
 PSEUDO = 5e-5          # ~half the smallest detectable relative abundance at typical MiSeq depth
 MIN_PREV = 0.10        # prevalence filter for the linear model only (label-free, per training fold)
 FAM_PREFIX = "FAM|"    # family-level aggregates, used by the linear model only
-DENSE_PREFIXES = ("MK_", "DIV_")   # engineered dense features, never prevalence-filtered or logged
-RARE_DEPTH = 2000      # common depth for rarefied (Hurlbert) richness
+DIV_PREFIX = "DIV_"    # alpha-diversity summaries, used by the linear model only
+RARE_DEPTH = 1000      # depth for expected (analytic) rarefied richness
 
 
 def _level(c, i, empty):
@@ -26,23 +26,30 @@ def _level(c, i, empty):
     return parts[i] if len(parts) > i else empty
 
 
-def _rarefied_richness(counts, n=RARE_DEPTH):
-    """Expected number of taxa in a random subsample of n reads (Hurlbert 1971), per sample."""
-    counts = np.asarray(counts, dtype=float)
-    out = np.empty(counts.shape[0])
-    for k, row in enumerate(counts):
-        c = row[row > 0]
-        N = c.sum()
-        if N <= n:
-            out[k] = len(c)
+def _shannon(P):
+    P = np.asarray(P, dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = np.where(P > 0, P * np.log(P), 0.0)
+    return -t.sum(axis=1)
+
+
+def _rarefied_richness(C, m):
+    """Expected number of OTUs observed when subsampling m reads without replacement."""
+    C = np.asarray(C, dtype=float)
+    N = C.sum(axis=1)
+    out = np.empty(len(C))
+    for k in range(len(C)):
+        n = C[k][C[k] > 0]
+        Nk = N[k]
+        if Nk <= m:
+            out[k] = len(n)
             continue
-        rest = N - c
-        ok = rest >= n
-        logp = np.zeros_like(c)
-        logp[ok] = (gammaln(rest[ok] + 1) - gammaln(rest[ok] - n + 1)
-                    - gammaln(N + 1) + gammaln(N - n + 1))
-        p_absent = np.where(ok, np.exp(logp), 0.0)
-        out[k] = np.sum(1.0 - p_absent)
+        rest = Nk - n
+        ok = rest >= m
+        p_abs = np.zeros_like(n)
+        p_abs[ok] = np.exp(gammaln(rest[ok] + 1) - gammaln(rest[ok] - m + 1)
+                           - gammaln(Nk + 1) + gammaln(Nk - m + 1))
+        out[k] = np.sum(1.0 - p_abs)
     return out
 
 
@@ -64,24 +71,24 @@ def featurize(items, ctx):
     G["MK_core_npresent"] = sum((col(g) > 0).astype(float) for g in CORE_MARKERS)
     G["MK_ext_npresent"] = sum((col(g) > 0).astype(float) for g in EXT_MARKERS)
 
-    # Alpha diversity: evenness (Shannon) and depth-normalized richness at OTU and genus level
     P = rel.values
-    with np.errstate(divide="ignore", invalid="ignore"):
-        G["DIV_shannon"] = -np.nansum(np.where(P > 0, P * np.log(P), 0.0), axis=1)
-    G["DIV_rich_otu"] = _rarefied_richness(items.values)
-    genus_counts = items.T.groupby(np.array(genus)).sum().T
-    G["DIV_rich_genus"] = _rarefied_richness(genus_counts.values)
-    return pd.concat([G, Fm], axis=1)
+    D = pd.DataFrame(index=rel.index)
+    D[DIV_PREFIX + "shannon_otu"] = _shannon(P)
+    D[DIV_PREFIX + "log_invsimpson"] = np.log(1.0 / np.clip((P ** 2).sum(axis=1), 1e-12, None))
+    gcols = [c for c in G.columns if not c.startswith("MK_")]
+    D[DIV_PREFIX + "shannon_genus"] = _shannon(G[gcols].values)
+    D[DIV_PREFIX + "log_rare_rich"] = np.log1p(_rarefied_richness(items.values, RARE_DEPTH))
+    return pd.concat([G, Fm, D], axis=1)
 
 
 def _linear_scores(F_train, y_train, F_test, ctx):
-    taxa = [c for c in F_train.columns if not c.startswith(DENSE_PREFIXES)]   # genera + families
-    mk = [c for c in F_train.columns if c.startswith(DENSE_PREFIXES)]
+    extra = [c for c in F_train.columns if c.startswith("MK_") or c.startswith(DIV_PREFIX)]
+    taxa = [c for c in F_train.columns if c not in set(extra)]   # genera + families
     prev = (F_train[taxa] > 0).mean(axis=0)
     keep = [g for g in taxa if prev[g] >= MIN_PREV]
-    Xtr = np.hstack([np.log10(F_train[keep].values + PSEUDO), F_train[mk].values])
+    Xtr = np.hstack([np.log10(F_train[keep].values + PSEUDO), F_train[extra].values])
     Xte = np.hstack([np.log10(F_test.reindex(columns=keep, fill_value=0).values + PSEUDO),
-                     F_test.reindex(columns=mk, fill_value=0).values])
+                     F_test.reindex(columns=extra, fill_value=0).values])
     sc = StandardScaler().fit(Xtr)
     Xtr, Xte = sc.transform(Xtr), sc.transform(Xte)
 
@@ -99,7 +106,8 @@ def _linear_scores(F_train, y_train, F_test, ctx):
 
 def fit_predict(F_train, y_train, F_test, ctx):
     y_train = np.asarray(y_train)
-    cols = [c for c in F_train.columns if not c.startswith(FAM_PREFIX)]   # RF: genera + markers + div
+    cols = [c for c in F_train.columns
+            if not c.startswith(FAM_PREFIX) and not c.startswith(DIV_PREFIX)]  # RF: genera + markers
     Xtr, Xte = F_train[cols].values, F_test.reindex(columns=cols, fill_value=0).values
     rf = RandomForestClassifier(n_estimators=1000, random_state=0, n_jobs=-1)
     rf.fit(Xtr, y_train)

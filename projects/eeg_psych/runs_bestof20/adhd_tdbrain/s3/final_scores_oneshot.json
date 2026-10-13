@@ -1,0 +1,24 @@
+{
+  "project": "eeg_psych",
+  "task": "adhd_tdbrain",
+  "seed": 3,
+  "run": "s3",
+  "subdir": "runs_bestof20",
+  "solution": "candidates/round_01.py",
+  "dev_seed": 0.774098,
+  "dev_champion": 0.651981,
+  "eval_seed": 0.6846153846153846,
+  "eval_champion": 0.8153846153846155,
+  "dev_gain": -0.12211699999999992,
+  "eval_gain": 0.13076923076923086,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.08567711417032195,
+    "ci95": [
+      -0.04369047619047625,
+      0.3000123152709359
+    ],
+    "p_one_sided": 0.0705
+  },
+  "external": {}
+}

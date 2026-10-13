@@ -1,0 +1,81 @@
+{
+  "project": "microbiome",
+  "task": "crc_baxter",
+  "seed": 2,
+  "run": "s2",
+  "subdir": "runs_bestof20",
+  "solution": "solution.py",
+  "dev_seed": 0.811972,
+  "dev_champion": 0.811972,
+  "eval_seed": 0.7558139534883721,
+  "eval_champion": 0.7558139534883721,
+  "dev_gain": 0.0,
+  "eval_gain": 0.0,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.0,
+    "ci95": [
+      0.0,
+      0.0
+    ],
+    "p_one_sided": 1.0
+  },
+  "external": {
+    "crc_zeller": {
+      "seed": 0.8183739837398374,
+      "champion": 0.8183739837398374,
+      "gain": 0.0,
+      "bootstrap": {
+        "n_boot": 2000,
+        "boot_se": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ],
+        "p_one_sided": 1.0
+      }
+    },
+    "crc_zackular": {
+      "seed": 0.8022222222222222,
+      "champion": 0.8022222222222222,
+      "gain": 0.0,
+      "bootstrap": {
+        "n_boot": 2000,
+        "boot_se": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ],
+        "p_one_sided": 1.0
+      }
+    },
+    "crc_xiang": {
+      "seed": 0.762987012987013,
+      "champion": 0.762987012987013,
+      "gain": 0.0,
+      "bootstrap": {
+        "n_boot": 2000,
+        "boot_se": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ],
+        "p_one_sided": 1.0
+      }
+    },
+    "crc_zhao": {
+      "seed": 0.7424301242236027,
+      "champion": 0.7424301242236027,
+      "gain": 0.0,
+      "bootstrap": {
+        "n_boot": 2000,
+        "boot_se": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ],
+        "p_one_sided": 1.0
+      }
+    }
+  }
+}

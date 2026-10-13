@@ -1,0 +1,24 @@
+{
+  "project": "neonatal_seizure",
+  "task": "helsinki",
+  "seed": 2,
+  "run": "s2",
+  "subdir": "runs_bestof20",
+  "solution": "candidates/round_01.py",
+  "dev_seed": 0.726521,
+  "dev_champion": 0.720818,
+  "eval_seed": 0.84821492029366,
+  "eval_champion": 0.7865903026653414,
+  "dev_gain": -0.005703000000000014,
+  "eval_gain": -0.06162461762831861,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.03143002443555304,
+    "ci95": [
+      -0.1177164210862636,
+      0.0021426060637211412
+    ],
+    "p_one_sided": 0.971
+  },
+  "external": {}
+}

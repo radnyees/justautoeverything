@@ -128,7 +128,8 @@ def main():
             if txt is None:
                 raise SystemExit(f"{n} seed failed on Eval:\n{err}")
         reps["seed"] = json.loads(txt)
-        (run / f"final{sfx}" / "seed.json").write_text(txt)
+        if seed_report(s) is None or a.subdir == "runs":    # baselines reuse runs/<task>/s<k>/final/seed.json
+            (run / f"final{sfx}" / "seed.json").write_text(txt)
         txt, err = report_of((n, "champion"))
         if txt is None:                         # e.g. a one-shot candidate that does not run
             out = {"project": a.project, "task": a.task, "seed": s, "run": n, "subdir": a.subdir,

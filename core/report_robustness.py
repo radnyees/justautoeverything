@@ -106,15 +106,15 @@ def baselines(df, stats_df):
                   f"failed to run: {int(one['dev_raw'].isna().sum())}/{len(one)}."]
     if stats_df is not None and len(stats_df):
         L += ["", "## Paired tests (task-level bootstrap; Holm across 12 tasks)", "",
-              "| comparison | tasks B > A | pooled gain (RE, 11 AUROC tasks) | 95% CI | p | Holm-significant tasks |",
+              "| comparison | tasks B > A | pooled gain (equal-weight, 11 AUROC tasks) | 95% CI | p | Holm-significant tasks |",
               "|---|---|---|---|---|---|"]
         pooled = json.loads((ROOT / "results" / "stats_pooled.json").read_text())
         for comp, g in stats_df.groupby("comparison", sort=False):
             p = pooled.get(comp)
             sig = ", ".join(f"{r.task} ({r.gain:+.3f})" for r in g.itertuples() if r.p_holm < 0.05) or "none"
             if p:
-                L.append(f"| {comp} | {int((g['gain'] > 0).sum())}/{len(g)} | {p['random_effects']:+.3f} | "
-                         f"{p['ci95'][0]:+.3f} .. {p['ci95'][1]:+.3f} | {_p(p['p_two_sided'])} | {sig} |")
+                L.append(f"| {comp} | {int((g['gain'] > 0).sum())}/{len(g)} | {p['mean_equal']:+.3f} | "
+                         f"{p['ci95_equal'][0]:+.3f} .. {p['ci95_equal'][1]:+.3f} | {_p(p['p_equal'])} | {sig} |")
     (RB / "BASELINES.md").write_text("\n".join(L) + "\n")
 
     # figure: mean gain over seed per task and arm, split points small
@@ -150,7 +150,7 @@ def fig_meta(stats_df):
              if c in set(stats_df["comparison"])]
     titles = {"seed->loop": "Loop vs seed", "seed->bestof20": "Best-of-20 vs seed", "seed->optuna": "Optuna vs seed",
               "bestof20->loop": "Loop vs best-of-20", "optuna->loop": "Loop vs Optuna"}
-    fig, axes = plt.subplots(1, len(comps), figsize=(2.55 * len(comps) + 1.4, 0.36 * 13 + 1.6), sharey=True,
+    fig, axes = plt.subplots(1, len(comps), figsize=(2.55 * len(comps) + 1.4, 0.36 * 13 + 1.6), sharey=True, sharex=True,
                              squeeze=False)
     order = TASK_ORDER[::-1]
     for ax, comp in zip(axes[0], comps):
@@ -166,9 +166,9 @@ def fig_meta(stats_df):
             ax.scatter([r["gain"]], [y], s=34, color=c if sig else "white", edgecolor=c, linewidth=1.4, zorder=3)
         p = pooled.get(comp)
         if p:
-            lo, hi, m = p["ci95"][0], p["ci95"][1], p["random_effects"]
+            lo, hi, m = p["ci95_equal"][0], p["ci95_equal"][1], p["mean_equal"]
             ax.fill([lo, m, hi, m], [0, 0.28, 0, -0.28], color=INK, zorder=3)
-            ax.text(0.98, 0.012, f"pooled {m:+.3f}\np={_p(p['p_two_sided'])}", transform=ax.transAxes, ha="right",
+            ax.text(0.98, 0.012, f"pooled {m:+.3f}\np={_p(p['p_equal'])}", transform=ax.transAxes, ha="right",
                     va="bottom", fontsize=7.5, color=INK)
         ax.axvline(0, color=REF, lw=1)
         ax.set_title(titles[comp], fontsize=9.5, loc="left", fontweight="bold")
@@ -178,7 +178,7 @@ def fig_meta(stats_df):
     axes[0][0].set_yticks(range(len(order) + 1))
     axes[0][0].set_yticklabels(["pooled (11 AUROC tasks)"] + order, fontsize=8)
     fig.supxlabel("Eval difference, mean over 3 splits, 95% CI (task-level subject bootstrap). "
-                  "Filled = Holm-adjusted p < 0.05 across 12 tasks; diamond = random-effects pool",
+                  "Filled = Holm-adjusted p < 0.05 across 12 tasks; diamond = equal-weight mean of the 11 AUROC tasks (t-interval)",
                   fontsize=8.5, color=MUT)
     fig.tight_layout()
     save(fig, "fig8_meta_forest")
@@ -240,7 +240,10 @@ def variance():
     ax.set_xlabel("Held-out Eval gain over the seed")
     ax.grid(True, axis="x", color=GRID, lw=0.8)
     ax.set_axisbelow(True)
-    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.01), ncol=2, frameon=False, fontsize=8.5)
+    handles = [plt.Line2D([0], [0], marker="o", ls="", color=MUT, label="split 1, 3 independent loops"),
+               plt.Line2D([0], [0], marker="o", ls="", markerfacecolor="white", markeredgecolor=MUT,
+                          label="splits 2-3 (different Eval sets)")]
+    ax.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, 1.01), ncol=2, frameon=False, fontsize=8.5)
     ax.set_title("Run-to-run vs split-to-split variation", loc="left", fontweight="bold", pad=26)
     save(fig, "fig9_variance")
     return d
@@ -413,23 +416,27 @@ def transfer(arms_df):
           "the TUAB official eval split is the same hospital and protocol (a near-in-distribution control)."]
     (RB / "TRANSFER.md").write_text("\n".join(L) + "\n")
 
-    fig, ax = plt.subplots(figsize=(6.4, 5.4))
-    lim = 0.45
+    fig, ax = plt.subplots(figsize=(6.6, 5.6))
+    xg = d["internal_loop"] - d["internal_seed"]
+    yg = d["ext_loop"] - d["ext_seed"]
+    lim = float(max(np.abs(xg).max(), np.abs(yg).max())) * 1.12
     ax.axhline(0, color=REF, lw=1)
     ax.axvline(0, color=REF, lw=1)
-    ax.plot([-lim, lim], [-lim, lim], ls="--", color=REF, lw=1)
-    marks = {"mumtaz": "o", "msu": "s", "repod": "D", "tuab_official_eval": "^"}
-    for e, gg in d.groupby("external"):
-        ax.scatter(gg["internal_loop"] - gg["internal_seed"], gg["ext_loop"] - gg["ext_seed"], s=52,
-                   marker=marks.get(e, "o"), color=color_of(gg["project"].iloc[0]), edgecolor="white", linewidth=1,
-                   label=f"{gg['task'].iloc[0]} -> {e}", zorder=3)
-    ax.set_xlim(-0.1, lim)
+    ax.plot([-lim, lim], [-lim, lim], ls="--", color=REF, lw=1, label="external gain = internal gain")
+    task_colors = ["#B5418E", "#2563C9", "#D9860F", "#1F9D55", "#7A5AF8", "#0E9AA7"]
+    markers = ["o", "s", "D", "^", "v", "P"]
+    for k, (t, gt) in enumerate(d.groupby("task", sort=False)):
+        for j, (e, gg) in enumerate(gt.groupby("external")):
+            ax.scatter(gg["internal_loop"] - gg["internal_seed"], gg["ext_loop"] - gg["ext_seed"], s=54,
+                       marker=markers[j % len(markers)], color=task_colors[k % len(task_colors)],
+                       edgecolor="white", linewidth=1, label=f"{t} -> {e}", zorder=3)
+    ax.set_xlim(min(-0.02, float(xg.min()) - 0.03), lim)
     ax.set_ylim(-lim, lim)
-    ax.set_xlabel("In-distribution Eval gain (loop - seed)")
-    ax.set_ylabel("External-dataset gain (loop - seed)")
+    ax.set_xlabel("In-distribution Eval gain (loop - seed), per split")
+    ax.set_ylabel("External-dataset gain (loop - seed), same model")
     ax.grid(True, color=GRID, lw=0.8)
     ax.set_axisbelow(True)
-    ax.legend(frameon=False, fontsize=8, loc="lower left")
+    ax.legend(frameon=False, fontsize=7.5, loc="upper left", bbox_to_anchor=(1.01, 1.0))
     ax.set_title("In-distribution gains vs transfer to other datasets", loc="left", fontweight="bold")
     save(fig, "fig11_transfer")
 
@@ -500,6 +507,7 @@ def audit():
           "reference cohort before per-patient use."]
     (RB / "AUDIT.md").write_text("\n".join(L) + "\n")
 
+    ch = ch[ch["task"] != "prism_auc"]          # Pearson-r task: listed in AUDIT.md, off this AUROC plot
     fig, ax = plt.subplots(figsize=(5.8, 5.4))
     lo = float(np.nanmin(ch[["eval_joint", "eval_chunked", "eval_refbatch"]].values)) - 0.02
     hi = float(np.nanmax(ch[["eval_joint", "eval_chunked", "eval_refbatch"]].values)) + 0.02
@@ -518,7 +526,8 @@ def audit():
     handles = [plt.Line2D([0], [0], marker="o", ls="", color=color_of(p), label=LABEL[p]) for p in PROJECT_ORDER
                if p in set(ch["project"])]
     ax.legend(handles=handles, frameon=False, fontsize=8, loc="lower right")
-    ax.set_title("Transduction audit: champions re-scored inductively", loc="left", fontweight="bold")
+    ax.set_title("Transduction audit: champions re-scored inductively (AUROC tasks)", loc="left",
+                 fontweight="bold", fontsize=10)
     save(fig, "fig12_audit")
 
 

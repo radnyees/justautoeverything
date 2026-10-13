@@ -1,4 +1,4 @@
-PARAMS = {'welch': 'mean', 'conds': 'first', 'absbp': False, 'ratios': True, 'asym': False, 'aperiodic': True, 'coherence': True, 'hjorth': True, 'entropy': True, 'model': 'rf', 'C': 1.3557243593963844}
+PARAMS = {'welch': 'median', 'conds': 'all', 'absbp': True, 'ratios': True, 'asym': False, 'aperiodic': True, 'coherence': True, 'hjorth': True, 'entropy': True, 'model': 'rf', 'C': 0.011167725694721154}
 """Non-LLM search baseline template (PARAMS is prepended by core/search.py)."""
 import numpy as np
 from joblib import Parallel, delayed

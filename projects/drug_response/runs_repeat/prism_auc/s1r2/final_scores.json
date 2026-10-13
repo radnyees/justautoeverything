@@ -1,0 +1,24 @@
+{
+  "project": "drug_response",
+  "task": "prism_auc",
+  "seed": 1,
+  "run": "s1r2",
+  "subdir": "runs_repeat",
+  "solution": "solution.py",
+  "dev_seed": 0.126431,
+  "dev_champion": 0.142113,
+  "eval_seed": 0.16789724496806963,
+  "eval_champion": 0.15474334923793231,
+  "dev_gain": 0.015682,
+  "eval_gain": -0.01315389573013731,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.008820373927966765,
+    "ci95": [
+      -0.030094493153838785,
+      0.004964853883918178
+    ],
+    "p_one_sided": 0.926
+  },
+  "external": {}
+}

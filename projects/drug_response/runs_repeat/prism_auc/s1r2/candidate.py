@@ -1,19 +1,19 @@
 """Shared ridge on top-5,000 variance genes, blended with a per-drug ridge on genes screened by
-correlation with that drug's AUC inside the training fold. The screening correlation of each
-drug is smoothed with the mean correlation vector of its MOA/target neighbours (drug-similarity
-sharing). Besides hard top-k screens, a soft screen weights each of the top-1000 genes by
-(|r| / mean|r|)^p. The (screen, penalty, smoothing, blend weight) option is chosen PER DRUG,
-shrunk toward the global optimum, with the shrinkage chosen by cross-fitting over inner folds.
-Prediction-level drug sharing: each drug's z-scored prediction is mixed with the mean
-prediction of its neighbour drugs (MOA/target neighbours, or drugs whose training AUC profiles
-correlate strongly): (1-eta) z_j + eta mean_nb z, chosen by cross-fitting.
-NEW: a nonlinear per-drug LightGBM on the top-50 MOA-smoothed screened genes (threshold /
-interaction effects of marker genes) is mixed into the linear blend with a global weight v
-chosen by cross-fitting over the inner folds; v=0 recovers the previous model exactly."""
+correlation with that drug's AUC inside the training fold. Screening variants: raw correlation,
+correlation smoothed with MOA/target neighbours, a residual variant that screens and fits the
+per-drug ridge on the shared ridge's training residuals alpha (K + alpha I)^-1 y and adds the
+result to the base prediction, and a multi-task-target variant "mt" that keeps the
+MOA-smoothed screen but fits the ridge to the drug's standardized AUC averaged with its MOA
+neighbours' mean standardized AUC (shares the eigendecomposition with "moa", so nearly free).
+Besides hard top-k screens, a soft screen weights each of the top-1000 genes by
+(|r| / mean|r|)^p. The (screen, penalty, variant, blend weight) option is chosen PER DRUG, shrunk
+toward the global optimum, with the shrinkage chosen by cross-fitting over inner folds.
+Prediction-level drug sharing (NEW: joint): each drug's z-scored prediction is mixed with BOTH
+the mean prediction of its MOA/target neighbours (weight a) and of its AUC-correlation
+neighbours (weight b), with (a, b) chosen jointly by cross-fitting."""
 import warnings
 
 import numpy as np
-import lightgbm as lgb
 from sklearn.model_selection import GroupKFold
 
 N_POOL = 10000
@@ -21,17 +21,14 @@ N_BASE = 5000
 ALPHA_BASE = 5000.0
 SCREENS = ((50, 0), (200, 0), (1000, 0), (1000, 1), (1000, 2))  # (k, soft-weight power p)
 LAMS = (1.0, 5.0, 25.0)
-GAMMAS = (0.0, 1.0)
+SCREEN_VARIANTS = ("raw", "moa", "res")
+VARIANTS = ("raw", "moa", "res", "mt")
 WEIGHTS = (0.0, 0.25, 0.5, 0.75, 1.0)
 STRATS = [("all", 1.0)] + [(m, s) for m in ("w", "all") for s in (0.0, 0.25, 0.5, 0.75)]
-SHARES = [(None, 0.0)] + [(k, e) for k in ("moa", "corr") for e in (0.15, 0.3, 0.5)]
+SHARES = [(a, b) for a in (0.0, 0.15, 0.3, 0.5) for b in (0.0, 0.15, 0.3, 0.5)
+          if a + b <= 0.65 + 1e-9]  # (MOA weight a, AUC-correlation weight b)
 CORR_THR = 0.5
 CORR_TOP = 10
-K_GBM = 50
-GBM_MIX = (0.0, 0.15, 0.3, 0.5)
-GBM_PARAMS = dict(n_estimators=120, learning_rate=0.05, num_leaves=7, max_depth=3,
-                  min_child_samples=15, subsample=0.8, subsample_freq=1,
-                  colsample_bytree=0.5, reg_lambda=1.0, n_jobs=1, random_state=0, verbose=-1)
 
 
 def _std(Xtr, Xte):
@@ -111,52 +108,61 @@ def _corr_neighbors(Y):
     return W / np.maximum(s, 1e-12)[:, None], s > 0
 
 
-def _smooth(Z, W, has, eta):
-    if eta <= 0:
-        return Z
-    Wz = Z @ W.T
-    return np.where(has[None, :], (1 - eta) * Z + eta * Wz, Z)
+def _share(Z, Wm, hm, Wc, hc, a, b):
+    """(1 - a_j - b_j) z_j + a_j mean_MOA(z) + b_j mean_corr(z), a_j/b_j zero without neighbours."""
+    out = Z.copy()
+    if a > 0:
+        am = a * hm.astype(float)
+        out += am[None, :] * (Z @ Wm.T - Z)
+    if b > 0:
+        bc = b * hc.astype(float)
+        out += bc[None, :] * (Z @ Wc.T - Z)
+    return out
 
 
 def _models(Xtr_raw, Ytr, Xte_raw, An, has_nb):
-    """Returns ymu, baseline deviations (n_te x D), dict of screened deviations per
-    (screen, lam, g), and per-drug LightGBM predictions (n_te x D)."""
+    """Returns ymu, baseline deviations (n_te x D), dict of screened deviations per (screen, lam, variant)."""
     Ztr, Zte = _std(Xtr_raw, Xte_raw)
     ymu = np.nan_to_num(np.nanmean(Ytr, 0))
     Yc = np.where(np.isnan(Ytr), ymu, Ytr) - ymu
     n, D = Yc.shape
     B = Ztr[:, :N_BASE]
-    base = (Zte[:, :N_BASE] @ B.T) @ np.linalg.solve(B @ B.T + ALPHA_BASE * np.eye(n), Yc)
+    Acoef = np.linalg.solve(B @ B.T + ALPHA_BASE * np.eye(n), Yc)
+    base = (Zte[:, :N_BASE] @ B.T) @ Acoef
+    Res = ALPHA_BASE * Acoef  # training residuals of the shared kernel ridge
+    Res = Res - Res.mean(0)
+
+    # multi-task target: drug's standardized AUC averaged with its MOA neighbours' mean
     ysd = Yc.std(0)
     ysd[ysd < 1e-12] = 1.0
-    C = (Ztr.T @ Yc) / (n * ysd)  # genes x drugs correlations
+    Yz = Yc / ysd
+    Ymt = 0.5 * (Yz + Yz @ An.T) * ysd
+
+    def _corr(T):
+        sd = T.std(0)
+        sd[sd < 1e-12] = 1.0
+        return (Ztr.T @ T) / (n * sd)  # genes x drugs correlations
+
+    C = _corr(Yc)
     Cnb = C @ An.T
+    S = {"raw": np.abs(C), "moa": np.abs((C + Cnb) / 2.0), "res": np.abs(_corr(Res))}
+    targets = {"raw": Yc, "moa": Yc, "res": Res, "mt": Ymt}
     kmax = max(k for k, _ in SCREENS)
-    orders, scores = {}, {}
-    for g in GAMMAS:
-        S = np.abs((C + g * Cnb) / (1.0 + g)) if g > 0 else np.abs(C)
-        orders[g] = np.argsort(-S, axis=0)[:kmax]
-        scores[g] = S
-    scr = {(s, l, g): np.zeros((Zte.shape[0], D)) for s in SCREENS for l in LAMS for g in GAMMAS}
-    gb = np.zeros((Zte.shape[0], D))
-    g_gbm = max(GAMMAS)
+    orders = {v: np.argsort(-S[v], axis=0)[:kmax] for v in SCREEN_VARIANTS}
+    scr = {(s, l, v): np.zeros((Zte.shape[0], D)) for s in SCREENS for l in LAMS for v in VARIANTS}
     for j in range(D):
-        # nonlinear per-drug model on the top MOA-smoothed screened genes
-        idx_g = orders[g_gbm][:K_GBM, j]
-        ok = ~np.isnan(Ytr[:, j])
-        if ok.sum() >= 20:
-            m = lgb.LGBMRegressor(**GBM_PARAMS)
-            m.fit(Ztr[ok][:, idx_g], Ytr[ok, j])
-            gb[:, j] = m.predict(Zte[:, idx_g])
-        for g in GAMMAS:
-            if g > 0 and not has_nb[j]:
+        for v in SCREEN_VARIANTS:
+            if v == "moa" and not has_nb[j]:
                 for s in SCREENS:
                     for l in LAMS:
-                        scr[(s, l, g)][:, j] = scr[(s, l, 0.0)][:, j]
+                        scr[(s, l, "moa")][:, j] = scr[(s, l, "raw")][:, j]
+                        scr[(s, l, "mt")][:, j] = scr[(s, l, "raw")][:, j]
                 continue
-            idx = orders[g][:, j]
+            idx = orders[v][:, j]
             Xa, Xb = Ztr[:, idx], Zte[:, idx]
-            sv = scores[g][idx, j]
+            sv = S[v][idx, j]
+            off = base[:, j] if v == "res" else 0.0
+            outs = [v, "mt"] if v == "moa" else [v]
             for (k, p) in SCREENS:
                 Xk, Xbk = Xa[:, :k], Xb[:, :k]
                 if p > 0:
@@ -170,10 +176,12 @@ def _models(Xtr_raw, Ytr, Xte_raw, An, has_nb):
                     Kt = Xbk @ Xk.T
                 w, V = np.linalg.eigh(Kk)
                 w = np.clip(w, 0, None)
-                Vy = V.T @ Yc[:, j]
-                for l in LAMS:
-                    scr[((k, p), l, g)][:, j] = Kt @ (V @ (Vy / (w + l * k)))
-    return ymu, base, scr, gb
+                KtV = Kt @ V
+                for vv in outs:
+                    Vy = V.T @ targets[vv][:, j]
+                    for l in LAMS:
+                        scr[((k, p), l, vv)][:, j] = off + KtV @ (Vy / (w + l * k))
+    return ymu, base, scr
 
 
 def _select(R, strat, opts):
@@ -214,17 +222,15 @@ def fit_predict(F_train, y_train, F_test, ctx):
         pass
     An, has_nb = _neighbors(drugs, D)
 
-    # grouped inner CV out-of-fold predictions for every (screen, lam, gamma) and the GBM
-    configs = [(s, l, g) for s in SCREENS for l in LAMS for g in GAMMAS]
+    # grouped inner CV out-of-fold predictions for every (screen, lam, variant)
+    configs = [(s, l, v) for s in SCREENS for l in LAMS for v in VARIANTS]
     oof_b = np.zeros_like(Y)
-    oof_g = np.zeros_like(Y)
     oof_s = {c: np.zeros_like(Y) for c in configs}
     vas = []
     for tr, va in GroupKFold(n_splits=3).split(Xtr, groups=groups):
         vas.append(va)
-        _, b, s, gbp = _models(Xtr[tr], Y[tr], Xtr[va], An, has_nb)
+        _, b, s = _models(Xtr[tr], Y[tr], Xtr[va], An, has_nb)
         oof_b[va] = _zcols(b)
-        oof_g[va] = _zcols(gbp)
         for c in configs:
             oof_s[c][va] = _zcols(s[c])
 
@@ -260,7 +266,7 @@ def fit_predict(F_train, y_train, F_test, ctx):
             best_score, best_strat = sc, strat
     choice = _select(Rfull, best_strat, opts)
 
-    # cross-fitted linear blends on each inner validation fold
+    # choose joint prediction-level drug sharing (MOA weight a, corr weight b) by cross-fitting
     Pz, Wc = [], []
     for f, m in enumerate(inmask):
         ch = _select(Rtr[f], best_strat, opts)
@@ -270,39 +276,20 @@ def fit_predict(F_train, y_train, F_test, ctx):
             P[:, j] = (1 - wt) * oof_b[m, j] + wt * oof_s[c][m, j]
         Pz.append(_zcols(P))
         Wc.append(_corr_neighbors(Y[~m]))
-
-    # choose the global GBM mixing weight by cross-fitting
-    best_v, best_vs = 0.0, -np.inf
-    for v in GBM_MIX:
-        vals = []
-        for f, m in enumerate(inmask):
-            r = _colr((1 - v) * Pz[f] + v * oof_g[m], Y[m])
-            if np.any(~np.isnan(r)):
-                vals.append(np.nanmean(r))
-        sc = float(np.mean(vals)) if vals else -np.inf
-        if sc > best_vs + 1e-9:
-            best_vs, best_v = sc, v
-    if best_v > 0:
-        Pz = [_zcols((1 - best_v) * Pz[f] + best_v * oof_g[m]) for f, m in enumerate(inmask)]
-
-    # choose prediction-level drug sharing (neighbour type, eta) by cross-fitting
     best_share, best_ss = SHARES[0], -np.inf
-    for kind, eta in SHARES:
+    for a, bw in SHARES:
         vals = []
         for f, m in enumerate(inmask):
-            if kind is None:
-                Ps = Pz[f]
-            else:
-                W, h = (An, has_nb) if kind == "moa" else Wc[f]
-                Ps = _smooth(Pz[f], W, h, eta)
+            Wf, hf = Wc[f]
+            Ps = _share(Pz[f], An, has_nb, Wf, hf, a, bw)
             r = _colr(Ps, Y[m])
             if np.any(~np.isnan(r)):
                 vals.append(np.nanmean(r))
         sc = float(np.mean(vals)) if vals else -np.inf
         if sc > best_ss + 1e-9:
-            best_ss, best_share = sc, (kind, eta)
+            best_ss, best_share = sc, (a, bw)
 
-    ymu, b, s, gbp = _models(Xtr, Y, Xte, An, has_nb)
+    ymu, b, s = _models(Xtr, Y, Xte, An, has_nb)
     ysd = np.nan_to_num(np.nanstd(Y, 0))
     zb = _zcols(b)
     zs = {}
@@ -313,11 +300,8 @@ def fit_predict(F_train, y_train, F_test, ctx):
             zs[c] = _zcols(s[c])
         blend[:, j] = (1 - wt) * zb[:, j] + wt * zs[c][:, j]
 
-    if best_v > 0 and blend.shape[0] > 1:
-        blend = (1 - best_v) * _zcols(blend) + best_v * _zcols(gbp)
-
-    kind, eta = best_share
-    if kind is not None and blend.shape[0] > 1:
-        W, h = (An, has_nb) if kind == "moa" else _corr_neighbors(Y)
-        blend = _smooth(_zcols(blend), W, h, eta)
+    a, bw = best_share
+    if (a > 0 or bw > 0) and blend.shape[0] > 1:
+        Wfull, hfull = _corr_neighbors(Y)
+        blend = _share(_zcols(blend), An, has_nb, Wfull, hfull, a, bw)
     return ymu + 0.3 * ysd * blend

@@ -1,7 +1,9 @@
 """Log relative band power (delta/theta/alpha/beta/gamma) per channel from Welch PSD of each
 available condition + per-channel aperiodic (1/f) exponent (log-log linear fit, alpha range
 excluded) + per-channel individual alpha frequency (centre of gravity of the 7-13 Hz PSD)
-+ per-channel Higuchi fractal dimension of the 1-45 Hz signal + per-channel wPLI node strength
++ per-channel Higuchi fractal dimension of the 1-45 Hz signal + per-channel normalized spectral
+entropy (1-45 Hz PSD) and permutation entropy (order 3, ~12 ms lag, 1-45 Hz signal)
++ per-channel wPLI node strength
 (theta, alpha, beta) + per-channel temporal variability (IQR across 2 s epochs) of log relative
 theta and alpha power (vigilance stability) + per-channel DFA exponent of theta and alpha
 amplitude envelopes (long-range temporal correlations) + per-channel node strength of
@@ -19,7 +21,7 @@ from sklearn.covariance import OAS
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from pyriemann.tangentspace import TangentSpace
-from antropy import higuchi_fd
+from antropy import higuchi_fd, perm_entropy
 
 BANDS = [(1, 4), (4, 8), (8, 13), (13, 30), (30, 45)]
 COV_BANDS = [(1, 45), (4, 8), (8, 13), (13, 30)]
@@ -29,6 +31,7 @@ DFA_BANDS = [(4, 8), (8, 13)]
 AEC_BANDS = [(4, 8), (8, 13), (13, 30)]
 MS_K = 4
 MS_NFEAT = 4 * MS_K + MS_K * (MS_K - 1)
+N_PER_CH = 5                                   # slope, paf, hfd, spectral entropy, perm entropy
 
 
 def _spectral(x, fs):
@@ -46,14 +49,23 @@ def _spectral(x, fs):
     am = (f >= 7) & (f <= 13)
     pa = p[:, am]
     paf = (pa * f[am]).sum(axis=1) / (pa.sum(axis=1) + 1e-12)
-    return bp.ravel(), slope, paf
+    # normalized spectral (Shannon) entropy of the 1-45 Hz PSD
+    pm = p[:, (f >= 1) & (f <= 45)]
+    q = pm / (pm.sum(axis=1, keepdims=True) + 1e-12)
+    sen = -(q * np.log(q + 1e-12)).sum(axis=1) / np.log(q.shape[1])
+    return bp.ravel(), slope, paf, sen
 
 
-def _hfd(x, fs):
-    # Higuchi fractal dimension of the 1-45 Hz signal (drift and line noise removed)
+def _hfd_pe(x, fs):
+    # Higuchi fractal dimension and permutation entropy of the 1-45 Hz signal
+    # (drift and line noise removed); PE lag fixed in time (~12 ms) across sampling rates
     sos = butter(4, [1, 45], btype="bandpass", fs=fs, output="sos")
     xf = sosfiltfilt(sos, x, axis=-1)
-    return np.array([higuchi_fd(np.ascontiguousarray(ch), kmax=10) for ch in xf])
+    lag = max(1, int(round(0.012 * fs)))
+    hfd = np.array([higuchi_fd(np.ascontiguousarray(ch), kmax=10) for ch in xf])
+    pe = np.array([perm_entropy(np.ascontiguousarray(ch), order=3, delay=lag, normalize=True)
+                   for ch in xf])
+    return hfd, pe
 
 
 def _epochs_fft(x, fs):
@@ -250,17 +262,20 @@ def featurize(items, ctx):
     rng = np.random.RandomState(0)
     base, covs, ms_in, pool = [], [], [], []
     for i in range(len(items)):
-        bp, sl, pf, fd, wp, vg, df, ae, cv, mi = [], [], [], [], [], [], [], [], [], []
+        bp, sl, pf, fd, se, pe, wp, vg, df, ae, cv, mi = ([] for _ in range(12))
         for c in conds:
             x = blocks[c][i]
             if x is None:                      # missing condition -> fall back to eyes closed
                 x = blocks[conds[0]][i]
             x64 = x.astype(np.float64)
-            b, s, a = _spectral(x64, fs)
+            b, s, a, e = _spectral(x64, fs)
             bp.append(b)
             sl.append(s)
             pf.append(a)
-            fd.append(_hfd(x64, fs))
+            se.append(e)
+            h, p = _hfd_pe(x64, fs)
+            fd.append(h)
+            pe.append(p)
             X, f = _epochs_fft(x64, fs)
             wp.append(_wpli(X, f, x64.shape[0]))
             vg.append(_vigilance(X, f))
@@ -276,7 +291,7 @@ def featurize(items, ctx):
                 keep = np.sort(rng.choice(keep, 300, replace=False))
             if len(keep):
                 pool.append(maps[keep].astype(np.float64))
-        base.append(np.concatenate(bp + sl + pf + fd + wp + vg + df + ae))
+        base.append(np.concatenate(bp + sl + pf + fd + se + pe + wp + vg + df + ae))
         covs.append(np.concatenate(cv))
         ms_in.append(mi)
     M = np.vstack(pool)
@@ -293,7 +308,7 @@ def _split(F, ctx):
     n_ch = len(ctx["channels"])
     n_cond = len(ctx["conditions"])
     n_bp = (n_ch * len(BANDS) * n_cond
-            + (3 + len(WPLI_BANDS) + len(VIG_BANDS) + len(DFA_BANDS) + len(AEC_BANDS))
+            + (N_PER_CH + len(WPLI_BANDS) + len(VIG_BANDS) + len(DFA_BANDS) + len(AEC_BANDS))
             * n_ch * n_cond
             + MS_NFEAT * n_cond)
     bp = F[:, :n_bp]

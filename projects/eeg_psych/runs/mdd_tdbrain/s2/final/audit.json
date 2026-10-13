@@ -1,0 +1,120 @@
+{
+ "seed": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_bandpower",
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.7919407894736843,
+  "score_joint": 0.7919407894736843,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_coherence",
+    "_envelope",
+    "_spectral",
+    "_zrows",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "_coherence",
+     "line": 77,
+     "code": "coh = coh.mean(axis=0)"
+    },
+    {
+     "function": "_envelope",
+     "line": 114,
+     "code": "g = e.mean(axis=0)"
+    },
+    {
+     "function": "_spectral",
+     "line": 33,
+     "code": "topo = ltot - ltot.mean()"
+    },
+    {
+     "function": "_spectral",
+     "line": 38,
+     "code": "lf_c = lf - lf.mean()"
+    },
+    {
+     "function": "_spectral",
+     "line": 40,
+     "code": "intercept = lp.mean(axis=1) - slope * lf.mean()"
+    }
+   ],
+   "batch_relative_outputs": []
+  },
+  "score": 0.9333881578947368,
+  "score_joint": 0.9333881578947368,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "seed_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_bandpower",
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.7919407894736843,
+  "score_joint": 0.7919407894736843,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_coherence",
+    "_envelope",
+    "_spectral",
+    "_zrows",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "_coherence",
+     "line": 77,
+     "code": "coh = coh.mean(axis=0)"
+    },
+    {
+     "function": "_envelope",
+     "line": 114,
+     "code": "g = e.mean(axis=0)"
+    },
+    {
+     "function": "_spectral",
+     "line": 33,
+     "code": "topo = ltot - ltot.mean()"
+    },
+    {
+     "function": "_spectral",
+     "line": 38,
+     "code": "lf_c = lf - lf.mean()"
+    },
+    {
+     "function": "_spectral",
+     "line": 40,
+     "code": "intercept = lp.mean(axis=1) - slope * lf.mean()"
+    }
+   ],
+   "batch_relative_outputs": []
+  },
+  "score": 0.9333881578947368,
+  "score_joint": 0.9333881578947368,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ }
+}

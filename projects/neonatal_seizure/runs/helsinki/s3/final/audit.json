@@ -1,0 +1,58 @@
+{
+ "seed": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.7798591158244371,
+  "score_joint": 0.7798591158244371,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ },
+ "champion": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.866611230570609,
+  "score_joint": 0.866611230570609,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ },
+ "seed_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.7798591158244371,
+  "score_joint": 0.7798591158244371,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ },
+ "champion_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.866611230570609,
+  "score_joint": 0.866611230570609,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 10
+ }
+}

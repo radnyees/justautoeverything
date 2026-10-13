@@ -1,5 +1,5 @@
-"""CC200 (no GSR) -> Ledoit-Wolf shrinkage covariance of standardized ROI series ->
-tangent-space embedding (Riemannian mean fitted on the training fold) -> L2 logistic regression."""
+"""CC200 (no GSR): Ledoit-Wolf shrunk correlation matrices -> Riemannian tangent-space embedding
+(reference mean fit on the training fold only) -> standardized L2 logistic regression."""
 import numpy as np
 from sklearn.covariance import LedoitWolf
 from sklearn.linear_model import LogisticRegression
@@ -13,18 +13,17 @@ def featurize(items, ctx):
     covs = []
     for x in ts:
         x = np.nan_to_num(np.asarray(x, dtype=np.float64))
-        x = x - x.mean(axis=0, keepdims=True)
-        sd = x.std(axis=0, keepdims=True)
-        x = np.where(sd > 1e-8, x / np.where(sd > 1e-8, sd, 1.0), 0.0)
+        x = x - x.mean(axis=0)
+        sd = x.std(axis=0)
+        sd[sd < 1e-8] = 1.0  # all-zero ROIs stay zero; shrinkage keeps the matrix PD
+        x = x / sd
         c = LedoitWolf(assume_centered=True).fit(x).covariance_
-        c = 0.5 * (c + c.T)
-        # guard all-zero ROIs (out of field of view): keep matrix SPD with unit-ish diagonal
-        dead = np.where(np.diag(c) < 1e-6)[0]
-        if dead.size:
-            c[dead, dead] = 1.0
-        c = c + 1e-4 * np.eye(c.shape[0])
+        # renormalize to a correlation-like matrix (unit diagonal where signal exists)
+        d = np.sqrt(np.clip(np.diag(c), 1e-8, None))
+        c = c / np.outer(d, d)
+        c = 0.5 * (c + c.T) + 1e-6 * np.eye(c.shape[0])
         covs.append(c.astype(np.float32))
-    return np.asarray(covs, dtype=np.float32)
+    return np.stack(covs)
 
 
 def fit_predict(F_train, y_train, F_test, ctx):
