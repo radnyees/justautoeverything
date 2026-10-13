@@ -30,6 +30,7 @@ TASKS = [("microbiome", "crc_baxter"), ("microbiome", "ibd_pooled"), ("proteomic
          ("proteomics_ad", "csf_ad"), ("drug_response", "prism_auc"), ("fmri_connectivity", "autism_abide"),
          ("fmri_connectivity", "adhd_adhd200"), ("eeg_psych", "mdd_tdbrain"), ("eeg_psych", "adhd_tdbrain"),
          ("eeg_psych", "sz_aseeg"), ("eeg_psych", "abnormal_tuab"), ("neonatal_seizure", "helsinki")]
+WITH_EXTERNAL = {"crc_baxter", "mdd_tdbrain", "sz_aseeg", "abnormal_tuab"}
 ID_ENCODES_LABEL = {"sz_aseeg", "mdd_tdbrain", "plasma_ad", "crc_baxter"}   # in Eval or external ids
 ACCESS = re.compile(r"\bopen\(|read_csv|read_parquet|read_table|np\.load\(|pd\.read|/data\b|JAE_|os\.environ|"
                     r"requests|urllib|http[s]?://|socket|subprocess|os\.system|os\.listdir|os\.walk|glob\.|"
@@ -106,24 +107,33 @@ def _context(f, n):
     return "\n".join(lines[best.lineno - 1: best.end_lineno]) if best else src
 
 
+CACHE = RB / "leakage_runs.json"
+MODES = {"eval": "sealed, real ids", "eval_anono": "sealed, order-preserving tokens",
+         "eval_anon": "sealed, random tokens"}
+
+
 def main():
     import modal
     ap = argparse.ArgumentParser()
     ap.add_argument("--tasks", nargs="*", default=None)
+    ap.add_argument("--modes", nargs="*", default=list(MODES))
     a = ap.parse_args()
     tasks = [pt for pt in TASKS if a.tasks is None or pt[1] in a.tasks]
+    cache = json.loads(CACHE.read_text()) if CACHE.exists() else {}
 
     files, hits = static_scan()
-    jobs, res = {}, {}
+    jobs = {}
     with ThreadPoolExecutor(12) as ex:
         b_eeg = bundle("eeg_psych")
         fn = modal.Function.from_name("jae-sealed", "ev_m")
-        for mode in ("eval", "eval_anon"):                    # positive control (a)
-            jobs[("control", "cheat", mode)] = ex.submit(fn.remote, "eeg_psych", "sz_aseeg", CHEAT, mode, 1, True,
-                                                        1800, b_eeg)
-        jobs[("control", "netprobe", "eval")] = ex.submit(                       # positive control (b)
-            modal.Function.from_name("jae-sealed", "ev_s").remote, "eeg_psych", "sz_aseeg", NETPROBE, "eval", 1,
-            False, 1800, b_eeg)
+        for mode in ("eval", "eval_anono", "eval_anon"):        # positive control (a)
+            k = f"control|cheat|{mode}"
+            if cache.get(k, {}).get("score") is None:
+                jobs[k] = ex.submit(fn.remote, "eeg_psych", "sz_aseeg", CHEAT, mode, 1, True, 1800, b_eeg)
+        if "NETWORK_PROBE: blocked" not in cache.get("control|netprobe|eval", {}).get("log", ""):
+            jobs["control|netprobe|eval"] = ex.submit(                      # positive control (b)
+                modal.Function.from_name("jae-sealed", "ev_s").remote, "eeg_psych", "sz_aseeg", NETPROBE, "eval", 1,
+                False, 1800, b_eeg)
         for project, task in tasks:
             size = project_cfg(project)["tasks"][task].get("size", "m")
             fn = modal.Function.from_name("jae-sealed", f"ev_{size}")
@@ -137,68 +147,93 @@ def main():
                 if task in ID_ENCODES_LABEL:
                     arms.append(("seed", seed_code))
                 for arm, code in arms:
-                    jobs[(task, s, arm)] = ex.submit(fn.remote, project, task, code, "eval_anon", s, True, 3800, b)
+                    for mode in a.modes:
+                        k = f"{task}|{s}|{arm}|{mode}"
+                        if cache.get(k, {}).get("score") is None:
+                            # full report only where external sets exist (large reports, e.g. Helsinki's
+                            # per-second predictions, come back via blob storage; only the score is needed)
+                            jobs[k] = ex.submit(fn.remote, project, task, code, mode, s, task in WITH_EXTERNAL,
+                                                3800, b)
         for k, f in jobs.items():
             try:
-                res[k] = f.result()
+                r = f.result()
             except Exception as e:                             # noqa: BLE001
-                res[k] = {"score": None, "log": f"{type(e).__name__}: {e}", "report": None}
+                r = {"score": None, "log": f"{type(e).__name__}: {e}", "report": None}
+            ext = {}
+            if r.get("report"):
+                ext = {n: e["score"] for n, e in (json.loads(r["report"]).get("external") or {}).items()}
+            cache[k] = {"score": r["score"], "external": ext, "log": (r.get("log") or "")[-600:]}
+            CACHE.write_text(json.dumps(cache, indent=0))      # persist after every result
 
-    rows = []
-    for (task, s, arm), r in res.items():
-        if task == "control":
-            continue
-        project = dict((t, p) for p, t in TASKS)[task]
-        ref = json.loads((ROOT / "projects" / project / "runs" / task / f"s{s}" / "final" / f"{arm}.json").read_text())
-        row = {"task": task, "split": s, "arm": arm, "reported": ref["score"],
-               "sealed_anon": r["score"], "error": None if r["score"] is not None else r["log"][-300:]}
-        if r["report"]:
-            rep = json.loads(r["report"])
-            for name, e in (rep.get("external") or {}).items():
-                row[f"ext:{name}:reported"] = ref["external"][name]["score"]
-                row[f"ext:{name}:sealed_anon"] = e["score"]
-        rows.append(row)
     import pandas as pd
+    rows = []
+    proj = dict((t, p) for p, t in TASKS)
+    keys = sorted({tuple(k.split("|")[:3]) for k in cache if not k.startswith("control|")})
+    for task, s, arm in keys:
+        ref = json.loads((ROOT / "projects" / proj[task] / "runs" / task / f"s{s}" / "final" / f"{arm}.json").read_text())
+        row = {"task": task, "split": int(s), "arm": arm, "reported": ref["score"]}
+        for mode in MODES:
+            c = cache.get(f"{task}|{s}|{arm}|{mode}")
+            row[mode] = None if c is None else c["score"]
+            for n, v in ((c or {}).get("external") or {}).items():
+                row[f"ext:{n}:reported"] = ref["external"][n]["score"]
+                row[f"ext:{n}:{mode}"] = v
+        rows.append(row)
     d = pd.DataFrame(rows).sort_values(["task", "split", "arm"])
-    RB.mkdir(parents=True, exist_ok=True)
     d.to_csv(RB / "leakage_rescore.csv", index=False, float_format="%.6f")
-    write_md(d, res, files, hits)
-    print(d.to_string())
+    write_md(d, cache, files, hits)
+    print(d[["task", "split", "arm", "reported"] + list(MODES)].to_string())
 
 
-def write_md(d, res, files, hits):
-    cheat = {m: res[("control", "cheat", m)]["score"] for m in ("eval", "eval_anon")}
-    probe_log = res[("control", "netprobe", "eval")]["log"]
+def _maxdiff(d, mode):
+    cols = [("reported", mode)] + [(c, c.replace(":reported", f":{mode}")) for c in d.columns
+                                   if c.startswith("ext:") and c.endswith(":reported")]
+    out = 0.0
+    for a, b in cols:
+        if b in d:
+            v = (d[b] - d[a]).abs().max()
+            if v == v:
+                out = max(out, float(v))
+    return out
+
+
+def write_md(d, cache, files, hits):
+    cheat = {m: cache.get(f"control|cheat|{m}", {}).get("score") for m in MODES}
+    probe_log = cache.get("control|netprobe|eval", {}).get("log", "")
     probe = "blocked" if "NETWORK_PROBE: blocked" in probe_log else (
-        "REACHABLE" if "reachable" in probe_log else "unknown: " + probe_log[-200:])
-    ext_cols = [c for c in d.columns if c.startswith("ext:") and c.endswith(":reported")]
-    diffs = [abs(d["sealed_anon"] - d["reported"]).max()]
-    for c in ext_cols:
-        diffs.append(abs(d[c.replace(":reported", ":sealed_anon")] - d[c]).max())
-    max_diff = max(x for x in diffs if x == x) if len(d) else float("nan")
+        "REACHABLE" if "reachable" in probe_log else "unknown")
+    fails = {m: int(d[m].isna().sum()) for m in MODES}
     bad = [h for h in hits if not h["allowed"]]
+    fmt = (lambda v: "FAILED" if v is None or v != v else f"{v:.6f}")
     L = ["# Leakage checks (ids, files, network)", "",
+         "All runs below use network-isolated scoring containers (app `jae-sealed`, `block_network=True`).", "",
          "## Positive controls (do the checks have power?)", "",
-         f"* A solution that reads the label from the id (`':sz' in item`) on sz_aseeg split 1: Eval AUROC "
-         f"**{cheat['eval']:.3f}** with real ids, **{cheat['eval_anon']:.3f}** with anonymized ids.",
-         f"* Network probe inside the scoring container (`jae-sealed`): **{probe}**.", "",
-         "## Re-scoring in network-isolated containers with anonymized ids", "",
-         f"{len(d)} solution x split runs (every champion; plus the seeds of tasks whose ids encode the label). "
-         f"Largest absolute difference from the reported score (Eval and external sets): **{max_diff:.2e}**; "
-         f"failed runs: {int(d['sealed_anon'].isna().sum())}.", "",
-         "| task | split | arm | reported | sealed + anonymized ids |", "|---|---|---|---|---|"]
+         "* A solution that reads the label from the id (`':sz' in item`), sz_aseeg split 1, Eval AUROC: "
+         + ", ".join(f"{MODES[m]} **{fmt(cheat[m])[:5]}**" for m in MODES) + ".",
+         f"* Network probe inside the scoring container: **{probe}**.", "",
+         "## Re-scoring every champion (and the seeds of tasks whose ids encode the label)", "",
+         "Three variants: real ids (determinism check); **order-preserving tokens** (the id TEXT is replaced but",
+         "the ids' sort order is kept, so anything that depends only on order -- e.g. sklearn GroupKFold's",
+         "assignment of `ctx['groups_train']` to inner-CV folds -- is unchanged); random tokens (the order",
+         "changes too). A solution that read labels from ids would lose performance under BOTH token",
+         "variants (cf. the control: 1.0 -> 0.5).", "",
+         f"Largest absolute difference from the reported score (Eval and external sets): real ids "
+         f"**{_maxdiff(d, 'eval'):.2e}**; order-preserving tokens **{_maxdiff(d, 'eval_anono'):.2e}**; random tokens "
+         f"**{_maxdiff(d, 'eval_anon'):.2e}** (failed runs: "
+         + ", ".join(f"{MODES[m]} {fails[m]}" for m in MODES) + ").", "",
+         "| task | split | arm | reported | real ids | order-preserving tokens | random tokens |",
+         "|---|---|---|---|---|---|---|"]
     for r in d.itertuples():
-        L.append(f"| {r.task} | {r.split} | {r.arm} | {r.reported:.6f} | "
-                 + (f"{r.sealed_anon:.6f}" if r.sealed_anon == r.sealed_anon and r.sealed_anon is not None else "FAILED")
-                 + " |")
+        L.append(f"| {r.task} | {r.split} | {r.arm} | {r.reported:.6f} | {fmt(r.eval)} | {fmt(r.eval_anono)} | "
+                 f"{fmt(r.eval_anon)} |")
     L += ["", "## Static scan of all saved solution code", "",
           f"{len(files)} files (champions, best-of-20 and repeat candidates, archived runs). Lines touching files, "
           f"network, subprocesses or the harness: {len(hits)}; outside the resources a task provides "
-          f"(`ctx['genesets_dir']`): **{len(bad)}**."]
+          f"(`ctx['genesets_dir']`, directly or via a helper function): **{len(bad)}**."]
     for h in bad[:40]:
         L.append(f"* `{h['file']}:{h['line']}`: `{h['code']}`")
     L += ["", "Limits: rejected candidates of the 36 main loops were not saved (only champions and the",
-          "round history), so they can only be covered through their champions; the loops' scoring",
+          "round history), so they are covered only through their champions; the loops' scoring",
           "containers (app `jae`) had network access and the data volume mounted -- the checks above show",
           "that no saved solution used either."]
     (RB / "LEAKAGE.md").write_text("\n".join(L) + "\n")

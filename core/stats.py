@@ -443,7 +443,8 @@ def _one(args):
 def main():
     from concurrent.futures import ProcessPoolExecutor
     jobs = [(a, b, p, t) for a, b in COMPARISONS for p, t in TASKS]
-    with ProcessPoolExecutor(4) as ex:
+    import os
+    with ProcessPoolExecutor(int(os.environ.get("JAE_STATS_WORKERS", "2"))) as ex:   # ~300 MB per worker
         results = list(ex.map(_one, jobs))
     rows, pooled = [], {}
     for a_arm, b_arm in COMPARISONS:
@@ -494,8 +495,8 @@ def _footnote(r):
     out = []
     if r["task"] != "prism_auc" and min(seeds) < 0.6:
         k = int(np.argmin(seeds))
-        out.append(f"{r['task']}: seed Eval on split {k + 1} was {seeds[k]:.3f} (near/below chance); split gains "
-                   f"{r['split_gains']}, so the mean gain leans on that split.")
+        out.append(f"{r['task']}: seed Eval on split {k + 1} was {seeds[k]:.3f} (below 0.6, the lowest of the 3 "
+                   f"splits); split gains {r['split_gains']}, so the mean gain leans on that split.")
     if r["task"] == "adhd_adhd200":
         out.append("adhd_adhd200: age + sex alone give a comparable within-site AUROC; see "
                    "results/robustness/CONFOUNDS.md for the demographic floor per split.")

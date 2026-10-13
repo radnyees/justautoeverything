@@ -117,7 +117,7 @@ def grouped_stratified_kfold(groups, strata, k, seed):
 
 
 # ---------------------------------------------------------------- id anonymization (audit)
-def anonymize(ds, seed):
+def anonymize(ds, seed, ordered=False):
     """Replace every item id the solution can see (list items, DataFrame indexes, meta indexes,
     the group ids passed as ctx["groups_train"], external items) by random tokens; callables in
     ctx get the real ids back, so data loading still works. Splits, labels and reports keep the
@@ -132,7 +132,9 @@ def anonymize(ds, seed):
         real += ids_of(ex["items"])
     real += [str(g) for g in ds["groups"]]
     uniq = sorted(set(real))
-    nums = rng.permutation(len(uniq))
+    # ordered=True: token rank = rank of the real id, so anything that depends only on the ORDER of ids
+    # (e.g. sklearn GroupKFold's assignment of groups to folds) is unchanged, while the id TEXT is gone
+    nums = np.arange(len(uniq)) if ordered else rng.permutation(len(uniq))
     tok = {r: f"x{n:06d}" for r, n in zip(uniq, nums)}
     inv = {t: r for r, t in tok.items()}
 
@@ -199,9 +201,11 @@ def run(solution_path):
     mode = os.environ.get("JAE_MODE", "dev")
     if ":" in mode:                              # e.g. "audit:10" = audit with 10 Eval chunks
         mode, os.environ["JAE_AUDIT_CHUNKS"] = mode.split(":", 1)
-    anon = mode.endswith("_anon")                # e.g. "eval_anon": item ids replaced by random tokens
-    if anon:
-        mode = mode[: -len("_anon")]
+    anon = None                                  # "eval_anon": random tokens; "eval_anono": tokens that
+    for sfx, kind in (("_anono", "ordered"), ("_anon", "random")):   # keep the ids' sort order
+        if mode.endswith(sfx):
+            anon, mode = kind, mode[: -len(sfx)]
+            break
     sys.path.insert(0, str(ROOT / "projects" / project))
     sys.path.insert(0, str(ROOT))
     prepare = importlib.import_module("prepare")
@@ -209,7 +213,7 @@ def run(solution_path):
     t0 = time.time()
     ds = prepare.load(task)                      # dict: items, y, groups, strata, meta?, ctx?, external?
     if anon:
-        ds = anonymize(ds, seed)
+        ds = anonymize(ds, seed, ordered=(anon == "ordered"))
     sol = load_solution(solution_path)
     n = len(ds["groups"])
     dev_idx, eval_idx = grouped_stratified_split(ds["groups"], ds["strata"], EVAL_FRAC, seed)

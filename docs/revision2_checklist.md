@@ -18,12 +18,12 @@ Each item: what is done, where the result lives, and how it was verified. Status
       demographics-only Eval AUROC; do seed/champion predictions track age/sex within site;
       demographic-adjusted AUROC and likelihood-ratio test of the prediction given age+sex(+site).
       ASEEG has no demographics (state it).
-- [ ] B2  Pooled IBD: body sites and repeated samples per patient in each of the 4 studies;
+- [x] B2  Pooled IBD: body sites and repeated samples per patient in each of the 4 studies;
       fix + rerun if patients can cross Dev/Eval.
-- [ ] B3  Labels encoded in subject IDs: harness ID-anonymization mode; re-score seeds and
+- [x] B3  Labels encoded in subject IDs: harness ID-anonymization mode; re-score seeds and
       champions of affected tasks (sz_aseeg + MSU/RepOD, mdd_tdbrain + Mumtaz, plasma_ad,
       crc_baxter + external cohorts) and require identical scores.
-- [ ] B4  Scoring sandbox: evaluation containers without network; static scan of all saved
+- [x] B4  Scoring sandbox: evaluation containers without network; static scan of all saved
       code for file/network/harness access, written to a report.
 
 ## C. Variance
@@ -61,3 +61,10 @@ Each item: what is done, where the result lives, and how it was verified. Status
 - D2-D4: results/robustness/DISCLOSURES.md (claims checked against git history and data).
 - Process slips caught and fixed: logs/ missing after reset (job re-run), optuna missing after reset
   (job re-run), two unverified dataset descriptors and one wrong repeat-run claim removed.
+- B2 done: IBD v3 loops/best-of-20/one-shot/Optuna/repeats scored; audit + leakage done. Loop gain
+  v3: -0.041 / +0.093 / -0.011 (v2 with leakage: +0.065 / +0.031 / +0.008).
+- B3/B4 done: 48 runs x 3 variants, no failures; order-preserving tokens == real ids for every run
+  (max |diff| 3.9e-4 = numerical non-determinism, identical with real ids); random tokens up to 0.034
+  (GroupKFold fold assignment of groups_train). Helsinki first failed on transient DNS when downloading
+  large reports; rerun with score-only reports for tasks without external sets.
+- C1: Helsinki repeats +0.055 / +0.051 (main +0.082); TUAB repeats running.

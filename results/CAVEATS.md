@@ -48,6 +48,11 @@
   seed was below chance on its Eval set (0.453), which inflates that split's gain.
 - **MicrobiomeHD Gevers.** The processed OTU table has only 162 stool samples (16 controls), so
   IBD is evaluated as a pooled four-study task (`ibd_pooled`); the single-study attempt is archived.
+  **v3 (revision 2):** the v2 pooled task also contained 94 Huttenhower biopsies and 28 Engstrand
+  tissue samples, and grouped by sample where a study had no subject column, so a person or co-twin
+  could appear in both Dev and Eval. The task is now stool only and grouped by person (by twin pair
+  in the Engstrand twin study); all IBD loops, baselines, repeats and audits were rerun, and the v2
+  records are archived in `projects/microbiome/archive/v2_ibd_pooled_with_biopsies/`.
 - **Proteomics.** Plasma: only open AD plasma MS set with labels (53 AD / 36 controls, one centre).
   CSF label = clinical diagnosis (the biochemical label is defined by CSF tau/amyloid).
 - **Drug response.** 200 most variable drugs (>= 70% coverage) from PRISM secondary screen 19Q4;

@@ -1,0 +1,114 @@
+{
+ "seed": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.6842428711897738,
+  "score_joint": 0.6842428711897738,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_study_labels",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "featurize",
+     "line": 54,
+     "code": "P.loc[m] = rel.loc[m].rank(axis=0, pct=True, method=\"average\").values"
+    },
+    {
+     "function": "featurize",
+     "line": 56,
+     "code": "mu = block.mean(axis=0)"
+    },
+    {
+     "function": "featurize",
+     "line": 57,
+     "code": "sd = block.std(axis=0)"
+    }
+   ],
+   "batch_relative_outputs": [
+    {
+     "function": "_within_study_rank",
+     "line": 76,
+     "code": "return rankdata(p) / len(p)"
+    },
+    {
+     "function": "_within_study_rank",
+     "line": 79,
+     "code": "out[m] = rankdata(p[m]) / m.sum()"
+    }
+   ]
+  },
+  "score": 0.7428302196001311,
+  "score_joint": 0.7775831694526384,
+  "feat_max_rel_diff": 10.575449409341003,
+  "n_chunks": 20
+ },
+ "seed_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.6842428711897738,
+  "score_joint": 0.6842428711897738,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_study_labels",
+    "featurize"
+   ],
+   "hits": [
+    {
+     "function": "featurize",
+     "line": 54,
+     "code": "P.loc[m] = rel.loc[m].rank(axis=0, pct=True, method=\"average\").values"
+    },
+    {
+     "function": "featurize",
+     "line": 56,
+     "code": "mu = block.mean(axis=0)"
+    },
+    {
+     "function": "featurize",
+     "line": 57,
+     "code": "sd = block.std(axis=0)"
+    }
+   ],
+   "batch_relative_outputs": [
+    {
+     "function": "_within_study_rank",
+     "line": 76,
+     "code": "return rankdata(p) / len(p)"
+    },
+    {
+     "function": "_within_study_rank",
+     "line": 79,
+     "code": "out[m] = rankdata(p[m]) / m.sum()"
+    }
+   ]
+  },
+  "score": 0.7630182726974762,
+  "score_joint": 0.7775831694526384,
+  "feat_max_rel_diff": 10.575449409341003,
+  "n_chunks": 20
+ }
+}

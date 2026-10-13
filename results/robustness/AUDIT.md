@@ -13,17 +13,17 @@ use unlabeled Eval-set statistics. For every seed and champion (12 tasks x 3 spl
 * static scan: rank-type outputs in `fit_predict`; cross-item operations inside `featurize`.
 
 Seeds: 1 (1 = all seeds exactly inductive).
-Champions with batch-dependent featurize: 9/36; with batch-relative (rank) outputs: 11/36; failed audits: 0.
-Champion Eval, joint -> ref-batch: mean change +0.0010, min -0.0244; joint -> chunked: mean -0.0199, min -0.2900.
+Champions with batch-dependent featurize: 12/36; with batch-relative (rank) outputs: 11/36; failed audits: 0.
+Champion Eval, joint -> ref-batch: mean change -0.0006, min -0.0244; joint -> chunked: mean -0.0187, min -0.2900.
 
 | task | split | arm | featurize batch-dep. | rank outputs | Eval joint | chunked | ref-batch |
 |---|---|---|---|---|---|---|---|
 | crc_baxter | 1 | champion | no | no | 0.8159 | 0.8159 | 0.8159 |
 | crc_baxter | 2 | champion | no | yes | 0.7240 | 0.6841 | 0.7585 |
 | crc_baxter | 3 | champion | no | yes | 0.6791 | 0.5663 | 0.6562 |
-| ibd_pooled | 1 | champion | no | yes | 0.7978 | 0.7572 | 0.8055 |
-| ibd_pooled | 2 | champion | no | yes | 0.7432 | 0.6839 | 0.7593 |
-| ibd_pooled | 3 | champion | no | yes | 0.7250 | 0.6038 | 0.7545 |
+| ibd_pooled | 1 | champion | yes | yes | 0.6617 | 0.6333 | 0.6494 |
+| ibd_pooled | 2 | champion | yes | yes | 0.7776 | 0.7428 | 0.7630 |
+| ibd_pooled | 3 | champion | yes | yes | 0.7657 | 0.6524 | 0.7882 |
 | plasma_ad | 1 | champion | yes | no | 0.9231 | 0.9060 | 0.9060 |
 | plasma_ad | 2 | champion | no | yes | 0.7949 | 0.7949 | 0.7949 |
 | plasma_ad | 3 | champion | no | no | 0.8803 | 0.8803 | 0.8803 |

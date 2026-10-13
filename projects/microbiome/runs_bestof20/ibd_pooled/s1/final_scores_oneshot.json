@@ -1,0 +1,24 @@
+{
+  "project": "microbiome",
+  "task": "ibd_pooled",
+  "seed": 1,
+  "run": "s1",
+  "subdir": "runs_bestof20",
+  "solution": "candidates/round_01.py",
+  "dev_seed": 0.738766,
+  "dev_champion": 0.763966,
+  "eval_seed": 0.7029457554900033,
+  "eval_champion": 0.6858816781383152,
+  "dev_gain": 0.0252,
+  "eval_gain": -0.017064077351688023,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.05267253636739566,
+    "ci95": [
+      -0.12424312682705775,
+      0.07750110440630224
+    ],
+    "p_one_sided": 0.643
+  },
+  "external": {}
+}

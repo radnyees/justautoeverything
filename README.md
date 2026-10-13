@@ -22,7 +22,7 @@ dataset and literature references: [`docs/references.md`](docs/references.md).
 | | `adhd_adhd200` | ADHD-200 preprocessed (Athena), 8 sites | within-site AUROC |
 | `neonatal_seizure` | `helsinki` | Helsinki neonatal EEG, per-second detection | concatenated AUROC |
 | `microbiome` | `crc_baxter` | MicrobiomeHD 16S, CRC vs healthy (Baxter); external: Zeller, Zackular, Xiang, Zhao | AUROC |
-| | `ibd_pooled` | MicrobiomeHD 16S, IBD vs controls, 4 studies pooled | within-study AUROC |
+| | `ibd_pooled` | MicrobiomeHD 16S, IBD vs controls, 4 studies pooled; stool only, grouped by person / twin pair (v3) | within-study AUROC |
 | `proteomics_ad` | `plasma_ad` | Plasma DIA proteomics PXD065835, AD vs controls | AUROC |
 | | `csf_ad` | CSF DIA proteomics (Bader 2020), clinical AD vs non-AD, 4 cohorts | within-site AUROC |
 | `drug_response` | `prism_auc` | CCLE expression → PRISM secondary-screen AUC, 200 drugs | mean per-drug Pearson r |
@@ -77,6 +77,16 @@ dataset and literature references: [`docs/references.md`](docs/references.md).
    * **Transduction audit** (`core/audit.py`, harness modes `audit`/`audit_ref`): do features
      depend on the batch, and does each seed/champion keep its Eval score when Eval items arrive
      in chunks (alone, or inside a dev-pool reference batch)?
+   * **Age/sex confounds** (`core/confounds_data.py` on Modal, `core/confounds.py`): demographics-only
+     models, whether predictions track age/sex in controls, and age/sex-adjusted AUROC.
+   * **Leakage** (`core/leakage_check.py`, app `jae-sealed` without network, harness modes
+     `eval_anon` / `eval_anono`): every champion re-scored with item ids replaced by tokens, with
+     positive controls; static scan of all saved solution code.
+   * **Statistics** report, per task, a subject-level bootstrap (conditional on the fitted models), a
+     hierarchical bootstrap over splits, loop runs and subjects (used for per-task claims) and a
+     split-level t-test, plus pooled-gain sensitivity analyses. Decisions taken after results were
+     seen are listed in `results/robustness/DISCLOSURES.md`; the pre-submission checklist is
+     `docs/revision2_checklist.md`.
 
 ## Layout
 
@@ -107,6 +117,9 @@ python core/report.py                                                           
 ./core/run_final_baselines.sh {bestof20|optuna|repeat} "<p>:<task> ..."            # Eval, once
 ./core/run_audit_all.sh                                                            # transduction audit
 ./core/run.sh python core/prep.py core/shortcuts.py                                # shortcut models
+./core/run.sh python core/prep.py core/confounds_data.py && modal volume get jae-data /analysis/confounds.json /tmp/
+python core/confounds.py /tmp/confounds.json                                       # age/sex confounds
+./core/run.sh modal deploy core/modal_sealed.py && ./core/run.sh python core/leakage_check.py
 ./core/run.sh python core/stats.py && python core/report_robustness.py
 ```
 
