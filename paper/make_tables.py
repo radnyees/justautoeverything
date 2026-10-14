@@ -7,13 +7,14 @@ results/robustness/baselines.csv, results/stats_tasks.csv and results/stats_pool
 writes paper/tables/*.tex.
 Re-run after core/report.py / core/stats.py whenever results change; never edit the .tex tables by hand.
 
-Bootstrap p-values: core/stats.py reports the raw tail fraction, which is 0 when no draw crosses
-zero. The tables use the (b + 1) / (B + 1) convention per tail (two-sided floor 2 / (B + 1) ~ 0.001
-for B = 2,000) and recompute Holm on the floored values, so no table prints an unattainable p.
+Robustness tables read results/stats_tasks.csv, results/stats_pooled.json and
+results/robustness/confounds.csv as written by core/stats.py and core/confounds.py: p-values there
+already use the (k+1)/(n+1) convention and are Holm-adjusted across the 12 tasks. Per-task claims use
+the hierarchical bootstrap (splits, loop runs, subjects); ^ marks tasks that are significant only
+conditionally on the fitted models (subject bootstrap).
 """
 import csv
 import json
-import math
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -162,78 +163,11 @@ def external_table():
 # ---------------------------------------------------------------- robustness tables
 ARMS = [("seed", "Seed"), ("oneshot", "One-shot"), ("bestof20", "Best-of-20"),
         ("optuna", "Optuna"), ("loop", "Loop")]
-# tasks whose in-distribution gain is suspect (TDBRAIN: separate recruitment, inverted on Mumtaz;
-# ADHD-200: gain carried by one split whose seed was below chance) -- sensitivity analysis only
-TDBRAIN = {"mdd_tdbrain", "adhd_tdbrain"}
-SUSPECT = TDBRAIN | {"adhd_adhd200"}
-
-
-def _betacf(a, b, x):
-    """Continued fraction for the regularized incomplete beta (Numerical Recipes 6.4)."""
-    tiny = 1e-300
-    c, d = 1.0, 1.0 - (a + b) * x / (a + 1.0)
-    d = 1.0 / (d if abs(d) > tiny else tiny)
-    h = d
-    for m in range(1, 300):
-        m2 = 2 * m
-        for aa in (m * (b - m) * x / ((a + m2 - 1) * (a + m2)),
-                   -(a + m) * (a + b + m) * x / ((a + m2) * (a + m2 + 1))):
-            d = 1.0 + aa * d
-            d = 1.0 / (d if abs(d) > tiny else tiny)
-            c = 1.0 + aa / c
-            c = c if abs(c) > tiny else tiny
-            h *= d * c
-        if abs(d * c - 1.0) < 1e-14:
-            break
-    return h
-
-
-def _betainc(a, b, x):
-    if x <= 0:
-        return 0.0
-    if x >= 1:
-        return 1.0
-    lbt = math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b) + a * math.log(x) + b * math.log(1 - x)
-    if x < (a + 1) / (a + b + 2):
-        return math.exp(lbt) * _betacf(a, b, x) / a
-    return 1.0 - math.exp(lbt) * _betacf(b, a, 1 - x) / b
-
-
-def t_sf2(t, df):
-    """Two-sided p-value of Student's t."""
-    return _betainc(df / 2, 0.5, df / (df + t * t))
-
-
-def t_ppf975(df):
-    lo, hi = 0.0, 50.0
-    for _ in range(200):
-        mid = (lo + hi) / 2
-        lo, hi = (mid, hi) if t_sf2(mid, df) > 0.05 else (lo, mid)
-    return (lo + hi) / 2
-
-
-def one_sample_t(x):
-    """Equal-weight mean, 95% t-interval and two-sided p across tasks."""
-    k = len(x)
-    m = sum(x) / k
-    se = math.sqrt(sum((v - m) ** 2 for v in x) / (k - 1) / k)
-    q = t_ppf975(k - 1)
-    return m, m - q * se, m + q * se, t_sf2(m / se, k - 1)
-
-
-def p_floor(p, n_boot):
-    """Two-sided bootstrap p with the (b + 1) / (B + 1) convention per tail."""
-    tail = float(p) / 2 * n_boot                 # draws in the smaller tail
-    return min(1.0, 2 * (tail + 1) / (n_boot + 1))
-
-
-def holm(ps):
-    order = sorted(range(len(ps)), key=lambda i: ps[i])
-    out, run = [0.0] * len(ps), 0.0
-    for k, i in enumerate(order):
-        run = max(run, (len(ps) - k) * ps[i])
-        out[i] = min(1.0, run)
-    return out
+# pooled sensitivity rows shown in the paper (labels as written by core/stats.py)
+SENSITIVITY = [("TDBRAIN counted as one dataset", "TDBRAIN as one dataset"),
+               ("without TDBRAIN MDD + ADHD", "without TDBRAIN"),
+               ("without ADHD-200", "without ADHD-200"),
+               ("without TDBRAIN MDD + ADHD and ADHD-200", "without TDBRAIN and ADHD-200")]
 
 
 def ptex(p):
@@ -241,22 +175,39 @@ def ptex(p):
 
 
 def stats_rows():
-    """{comparison: {task: row}} with floored p and Holm recomputed across the 12 tasks."""
+    """{comparison: {task: row}} from results/stats_tasks.csv."""
     by = {}
     for r in read_csv("stats_tasks.csv"):
-        r["p_fl"] = p_floor(r["p_two_sided"], int(r["n_boot"]))
         by.setdefault(r["comparison"], {})[r["task"]] = r
-    for rows in by.values():
-        keys = list(rows)
-        for k, h in zip(keys, holm([rows[k]["p_fl"] for k in keys])):
-            rows[k]["p_holm_fl"] = h
     return by
 
 
-def baselines_table():
+def gain_cell(r):
+    """Gain, bold if Holm-significant with the hierarchical bootstrap; ^ if significant only
+    conditionally on the fitted models (subject bootstrap)."""
+    g = signed(r["gain"])
+    if float(r["p_hier_holm"]) < 0.05:
+        return f"\\textbf{{{g}}}"
+    if float(r["p_holm"]) < 0.05:
+        return f"{g}$^\\wedge$"
+    return g
+
+
+def eval_means():
     acc = {}
     for r in read_csv("robustness/baselines.csv"):
         acc.setdefault((r["task"], r["arm"]), []).append(float(r["eval"]))
+    return {k: sum(v) / len(v) for k, v in acc.items()}
+
+
+def arm_cells(means, t):
+    vals = [means[(t, a)] for a, _ in ARMS]
+    best = max(vals[1:])
+    return [f3(v) if i == 0 or v < best else f"\\textbf{{{f3(v)}}}" for i, v in enumerate(vals)]
+
+
+def baselines_table():
+    means = eval_means()
     L = [
         "% generated by paper/make_tables.py from results/robustness/baselines.csv -- do not edit",
         "\\begin{tabular}{l" + "c" * len(ARMS) + "}",
@@ -265,10 +216,7 @@ def baselines_table():
         "\\midrule",
     ]
     for p, t, _, name in TASKS:
-        vals = [sum(acc[(t, a)]) / len(acc[(t, a)]) for a, _ in ARMS]
-        best = max(vals[1:])
-        cells = [f3(v) if i == 0 or v < best else f"\\textbf{{{f3(v)}}}" for i, v in enumerate(vals)]
-        L.append(f"{name} & " + " & ".join(cells) + " \\\\")
+        L.append(f"{name} & " + " & ".join(arm_cells(means, t)) + " \\\\")
     L += ["\\bottomrule", "\\end{tabular}"]
     write("baselines.tex", L)
 
@@ -279,31 +227,26 @@ def stats_table():
              ("bestof20->loop", "Loop $-$ best-of-20"), ("optuna->loop", "Loop $-$ Optuna")]
     L = [
         "% generated by paper/make_tables.py from results/stats_tasks.csv -- do not edit",
-        "\\begin{tabular}{l" + "rr" * len(comps) + "}",
+        "\\begin{tabular}{l" + "rrr" * len(comps) + "}",
         "\\toprule",
-        "& " + " & ".join(f"\\multicolumn{{2}}{{c}}{{{n}}}" for _, n in comps) + " \\\\",
-        "".join(f"\\cmidrule(lr){{{2 + 2 * i}-{3 + 2 * i}}}" for i in range(len(comps))),
-        "Task" + " & gain & $p_\\text{Holm}$" * len(comps) + " \\\\",
+        "& " + " & ".join(f"\\multicolumn{{3}}{{c}}{{{n}}}" for _, n in comps) + " \\\\",
+        "".join(f"\\cmidrule(lr){{{2 + 3 * i}-{4 + 3 * i}}}" for i in range(len(comps))),
+        "Task" + " & gain & hier. & subj." * len(comps) + " \\\\",
         "\\midrule",
     ]
     for p, t, _, name in TASKS:
         cells = []
         for c, _ in comps:
             r = by[c][t]
-            g = signed(r["gain"])
-            if r["p_holm_fl"] < 0.05:
-                g = f"\\textbf{{{g}}}"
-            cells += [g, ptex(r["p_holm_fl"])]
+            cells += [gain_cell(r), ptex(float(r["p_hier_holm"])), ptex(float(r["p_holm"]))]
         L.append(f"{name} & " + " & ".join(cells) + " \\\\")
     L += ["\\bottomrule", "\\end{tabular}"]
     write("stats.tex", L)
 
 
 def combined_table():
-    """Main-text table: Eval per arm, loop gain vs seed and vs Optuna with Holm p, splits improved."""
-    acc = {}
-    for r in read_csv("robustness/baselines.csv"):
-        acc.setdefault((r["task"], r["arm"]), []).append(float(r["eval"]))
+    """Main-text table: Eval per arm, loop gain vs seed and vs Optuna (Holm, hierarchical), splits improved."""
+    means = eval_means()
     by = stats_rows()
     L = [
         "% generated by paper/make_tables.py from results/robustness/baselines.csv and stats_tasks.csv -- do not edit",
@@ -317,13 +260,10 @@ def combined_table():
         "\\midrule",
     ]
     for p, t, _, name in TASKS:
-        vals = [sum(acc[(t, a)]) / len(acc[(t, a)]) for a, _ in ARMS]
-        best = max(vals[1:])
-        cells = [f3(v) if i == 0 or v < best else f"\\textbf{{{f3(v)}}}" for i, v in enumerate(vals)]
+        cells = arm_cells(means, t)
         for c in ("seed->loop", "optuna->loop"):
             r = by[c][t]
-            g = signed(r["gain"])
-            cells += [f"\\textbf{{{g}}}" if r["p_holm_fl"] < 0.05 else g, ptex(r["p_holm_fl"])]
+            cells += [gain_cell(r), ptex(float(r["p_hier_holm"]))]
         up = sum(float(x) > 0 for x in by["seed->loop"][t]["split_gains"].split())
         L.append(f"{name} & " + " & ".join(cells) + f" & {up}/3 \\\\")
     L += ["\\bottomrule", "\\end{tabular}"]
@@ -332,13 +272,12 @@ def combined_table():
 
 def pooled_table():
     pooled = json.loads((ROOT / "results" / "stats_pooled.json").read_text())
-    by = stats_rows()
     comps = [("seed->loop", "Loop vs.\\ seed"), ("seed->optuna", "Optuna vs.\\ seed"),
              ("seed->bestof20", "Best-of-20 vs.\\ seed"), ("seed->oneshot", "One-shot vs.\\ seed"),
              ("optuna->loop", "Loop vs.\\ Optuna"), ("bestof20->loop", "Loop vs.\\ best-of-20"),
              ("oneshot->loop", "Loop vs.\\ one-shot")]
     L = [
-        "% generated by paper/make_tables.py from results/stats_pooled.json and stats_tasks.csv -- do not edit",
+        "% generated by paper/make_tables.py from results/stats_pooled.json -- do not edit",
         "\\begin{tabular}{lcccccc}",
         "\\toprule",
         "Comparison & $k$ & mean gain & 95\\% CI & $p$ & random effects [95\\% CI] & $I^2$ \\\\",
@@ -352,15 +291,40 @@ def pooled_table():
                  f"{ptex(s['p_equal'])} & {signed(s['random_effects'])} [{signed(rlo)}, {signed(rhi)}] & "
                  f"{100 * s['I2']:.0f}\\% \\\\")
     L += ["\\midrule",
-          "\\multicolumn{7}{l}{\\emph{Sensitivity: leaving out tasks with suspect in-distribution gains}} \\\\"]
+          "\\multicolumn{7}{l}{\\emph{Sensitivity of the equal-weight mean}} \\\\"]
     for c, name in (("seed->loop", "Loop vs.\\ seed"), ("optuna->loop", "Loop vs.\\ Optuna")):
-        for drop, why in ((TDBRAIN, "without TDBRAIN"), (SUSPECT, "without TDBRAIN, ADHD-200")):
-            x = [float(by[c][t]["gain"]) for t in pooled[c]["tasks"] if t not in drop]
-            m, lo, hi, p = one_sample_t(x)
-            L.append(f"{name}, {why} & {len(x)} & {signed(m)} & [{signed(lo)}, {signed(hi)}] & "
-                     f"{ptex(p)} & & \\\\")
+        sens = {x["label"]: x for x in pooled[c]["sensitivity"]}
+        for label, short in SENSITIVITY:
+            x = sens[label]
+            L.append(f"{name}, {short} & {x['k']} & {signed(x['mean'])} & "
+                     f"[{signed(x['ci95'][0])}, {signed(x['ci95'][1])}] & {ptex(x['p'])} & & \\\\")
     L += ["\\bottomrule", "\\end{tabular}"]
     write("pooled.tex", L)
+
+
+def confounds_table():
+    rows = read_csv("robustness/confounds.csv")
+    names = {"adhd_adhd200": "ADHD (ADHD-200)$^\\dagger$", "autism_abide": "Autism (ABIDE I)$^\\dagger$",
+             "mdd_tdbrain": "MDD (TDBRAIN)", "adhd_tdbrain": "ADHD (TDBRAIN)"}
+    acc = {}
+    for r in rows:
+        acc.setdefault((r["task"], r["arm"]), []).append(r)
+    mean = lambda rs, k: sum(float(r[k]) for r in rs) / len(rs)
+    L = [
+        "% generated by paper/make_tables.py from results/robustness/confounds.csv -- do not edit",
+        "\\begin{tabular}{llcccc}",
+        "\\toprule",
+        "Task & arm & AUROC & age+sex only & adjusted for age+sex & LR test $p<0.05$ (splits) \\\\",
+        "\\midrule",
+    ]
+    for t, name in names.items():
+        for i, arm in enumerate(("seed", "champion")):
+            rs = acc[(t, arm)]
+            sig = sum(float(r["lr_p"]) < 0.05 for r in rs)
+            L.append(f"{name if i == 0 else ''} & {arm} & {f3(mean(rs, 'auc_reported'))} & "
+                     f"{f3(mean(rs, 'auc_demographics_only'))} & {f3(mean(rs, 'auc_adjusted'))} & {sig}/{len(rs)} \\\\")
+    L += ["\\bottomrule", "\\end{tabular}"]
+    write("confounds.tex", L)
 
 
 if __name__ == "__main__":
@@ -371,3 +335,4 @@ if __name__ == "__main__":
     stats_table()
     pooled_table()
     combined_table()
+    confounds_table()

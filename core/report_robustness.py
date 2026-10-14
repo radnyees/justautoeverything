@@ -470,7 +470,7 @@ def transfer(arms_df):
           "splits with loop above chance |", "|---|---|---|---|---|"]
     for (t, e), r in g.iterrows():
         L.append(f"| {t} -> {e} | {r.int_loop:.3f} | {r.ext_seed:.3f} -> {r.ext_loop:.3f} | "
-                 f"{r.ext_loop - r.int_loop:+.3f} | {r.above}/{r.n} |")
+                 f"{r.ext_loop - r.int_loop:+.3f} | {int(r.above)}/{int(r.n)} |")
     (RB / "TRANSFER.md").write_text("\n".join(L) + "\n")
 
     # figure: in-distribution vs external AUROC, seed (hollow) and loop (filled), chance line

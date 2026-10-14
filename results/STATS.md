@@ -8,7 +8,7 @@ scores of A and B per split are listed). Three p-values per task, all two-sided:
   these seeds on new subjects from the same population, and ignores how much the result changes
   with a different split or a different loop run.
 * **p (hierarchical)** -- bootstrap that resamples the 3 splits, then (where independent repeat
-  loops exist, split 1 of 10 tasks) the loop run, then subjects within the drawn split. It includes
+  loops exist, split 1 of 9 tasks) the loop run, then subjects within the drawn split. It includes
   split-to-split and run-to-run variation; with only 3 splits the split level is coarse.
 * **p (split t)** -- one-sample t-test of the 3 split gains (n = 3, low power).
 

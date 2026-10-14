@@ -514,7 +514,7 @@ def write_md(df, pooled):
          "  these seeds on new subjects from the same population, and ignores how much the result changes",
          "  with a different split or a different loop run.",
          "* **p (hierarchical)** -- bootstrap that resamples the 3 splits, then (where independent repeat",
-         "  loops exist, split 1 of 10 tasks) the loop run, then subjects within the drawn split. It includes",
+         "  loops exist, split 1 of 9 tasks) the loop run, then subjects within the drawn split. It includes",
          "  split-to-split and run-to-run variation; with only 3 splits the split level is coarse.",
          "* **p (split t)** -- one-sample t-test of the 3 split gains (n = 3, low power).", "",
          "p-values use the (k+1)/(n+1) convention (2,000 draws), so the smallest two-sided p is ~0.001 and the",

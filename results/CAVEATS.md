@@ -24,7 +24,7 @@
 - Small Eval sets -> wide CIs: plasma_ad (~22), sz_aseeg (~25), helsinki (20 neonates),
   csf_ad (~35), adhd_tdbrain (~40, age-matched adults only), mdd_tdbrain (70).
 - Large: abnormal_tuab (688 recordings + 276 official eval), autism_abide (262), adhd_adhd200 (217),
-  ibd_pooled (146), prism_auc (120 cell lines x 200 drugs).
+  ibd_pooled (113 stool samples from 103 people / twin pairs, v3), prism_auc (120 cell lines x 200 drugs).
 
 ## Task-specific
 - **TDBRAIN (mdd, adhd).** Healthy controls in TDBRAIN were all >= 18 y; tasks are age-matched to

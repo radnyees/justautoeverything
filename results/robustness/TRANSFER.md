@@ -50,11 +50,11 @@ Per task (computed from the table below):
 
 | task -> external | in-distribution Eval (loop) | external AUROC seed -> loop | change vs in-distribution | splits with loop above chance |
 |---|---|---|---|---|
-| crc_baxter -> crc_zeller | 0.740 | 0.826 -> 0.799 | +0.059 | 3.0/3.0 |
-| crc_baxter -> crc_zackular | 0.740 | 0.797 -> 0.773 | +0.033 | 3.0/3.0 |
-| crc_baxter -> crc_xiang | 0.740 | 0.750 -> 0.697 | -0.043 | 2.0/3.0 |
-| crc_baxter -> crc_zhao | 0.740 | 0.703 -> 0.694 | -0.045 | 3.0/3.0 |
-| mdd_tdbrain -> mumtaz | 0.954 | 0.269 -> 0.494 | -0.460 | 0.0/3.0 |
-| sz_aseeg -> msu | 0.799 | 0.696 -> 0.538 | -0.261 | 1.0/3.0 |
-| sz_aseeg -> repod | 0.799 | 0.498 -> 0.553 | -0.246 | 0.0/3.0 |
-| abnormal_tuab -> tuab_official_eval | 0.918 | 0.867 -> 0.928 | +0.009 | 3.0/3.0 |
+| crc_baxter -> crc_zeller | 0.740 | 0.826 -> 0.799 | +0.059 | 3/3 |
+| crc_baxter -> crc_zackular | 0.740 | 0.797 -> 0.773 | +0.033 | 3/3 |
+| crc_baxter -> crc_xiang | 0.740 | 0.750 -> 0.697 | -0.043 | 2/3 |
+| crc_baxter -> crc_zhao | 0.740 | 0.703 -> 0.694 | -0.045 | 3/3 |
+| mdd_tdbrain -> mumtaz | 0.954 | 0.269 -> 0.494 | -0.460 | 0/3 |
+| sz_aseeg -> msu | 0.799 | 0.696 -> 0.538 | -0.261 | 1/3 |
+| sz_aseeg -> repod | 0.799 | 0.498 -> 0.553 | -0.246 | 0/3 |
+| abnormal_tuab -> tuab_official_eval | 0.918 | 0.867 -> 0.928 | +0.009 | 3/3 |

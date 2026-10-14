@@ -48,15 +48,17 @@ and external data. We ran a loop driven by Claude Opus 5.5 on 12 biomedical pred
 (scalp and neonatal EEG, resting-state fMRI, 16S microbiome, proteomics and drug response;
 3 splits per task, 20 rounds per loop). Each champion was scored once on a held-out 25\% of subjects
 and on eight external datasets, and compared with three baselines given the same 20 development
-evaluations: one LLM proposal, 20 independent LLM proposals without feedback, and Optuna search
-over a hand-written pipeline. Development scores improved in all 36 runs; held-out scores in 27.
-Averaged over 11 AUROC tasks the loop gained $+0.052$ AUROC over the seed (95\% CI $+0.009$ to
-$+0.095$), compared with $+0.002$ for one proposal, $+0.014$ for 20 proposals without feedback and
-$+0.035$ for Optuna. Its advantage over Optuna ($+0.017$, $p=0.29$) was significant only on
-abnormal-EEG and neonatal-seizure detection. When site and demographics were available, the loop
-built its models on them, and its gains on psychiatric EEG did not transfer to external cohorts.
-Feedback is what makes the LLM useful here, but the loop does not replace shortcut-free scoring
-and external validation.
+evaluations: one LLM proposal, 20 independent LLM proposals without feedback, and Optuna search over
+a pipeline written with knowledge of the loop's findings. Development scores improved in all 36 runs;
+held-out scores in 25. Averaged over 11 AUROC tasks the loop gained $+0.050$ AUROC over the seed
+(95\% CI $+0.006$ to $+0.094$), compared with $+0.004$ for one proposal, $+0.014$ for 20 proposals
+without feedback and $+0.033$ for Optuna. The pooled gain was not robust to removing any one of
+six tasks, and the loop's advantage over Optuna ($+0.017$, $p=0.28$) was significant only for
+abnormal-EEG and neonatal-seizure detection, the two tasks whose gains also replicated across
+independent repeats of the loop. When site and demographics were available, the loop built its
+models on them, and its gains on psychiatric EEG did not transfer to external cohorts. Feedback is
+what makes the LLM useful here, but the loop does not replace shortcut-free scoring and external
+validation.
 \end{abstract}
 
 % ===========================================================================================
@@ -79,14 +81,17 @@ the best of many candidates on one CV score is itself a source of optimistic bia
 opportunity to find all of these.
 
 We therefore ask not whether the loop improves the development score, but \emph{when} the
-improvement holds up: on held-out subjects, on external cohorts, and against simpler uses of the
-same budget. Across 12 tasks in six domains under one fixed protocol, we contribute
-(i)~held-out results for 36 loop runs, each scored once;
+improvement holds up: on held-out subjects, on external cohorts, against simpler uses of the same
+budget, and under checks for confounding and leakage. Across 12 tasks in six domains under one fixed
+protocol, we contribute
+(i)~held-out results for 36 loop runs, each scored once, plus independent repeats on 9 tasks;
 (ii)~three same-budget baselines that separate the effect of feedback from that of the LLM and
 of ordinary search;
-(iii)~multiplicity-corrected and pooled statistics with a sensitivity analysis;
-(iv)~evidence that the loop exploits site and demographic shortcuts when they are available; and
-(v)~transfer to eight external datasets, run-to-run repeats and a transduction audit.
+(iii)~multiplicity-corrected per-task statistics that include split and run variation, and pooled
+estimates with sensitivity analyses;
+(iv)~evidence that the loop exploits site and demographic shortcuts when they are available, and
+an age/sex confound analysis of the shortcut-free results; and
+(v)~transfer to eight external datasets, a transduction audit and a leakage audit.
 
 % ===========================================================================================
 \section{Related work}\label{sec:related}
@@ -119,21 +124,23 @@ rounds). A loop runs 20 rounds with patience 10 and keeps a candidate iff its de
 improves by more than $10^{-4}$.
 
 \paragraph{Tasks.} \Cref{tab:tasks} lists the 12 tasks: abnormal EEG (TUAB \citep{obeid2016tuh});
-depression and ADHD (TDBRAIN \citep{vandijk2022tdbrain}); schizophrenia (ASEEG \citep{aseeg});
-per-second neonatal seizure detection (Helsinki \citep{stevenson2019helsinki}); autism and ADHD
-from fMRI connectivity (ABIDE I \citep{dimartino2014abide}, ADHD-200; \citep{pcp}); colorectal
-cancer (CRC) and IBD from 16S profiles (MicrobiomeHD \citep{duvallet2017,baxter2016}); Alzheimer's
-disease (AD) from plasma \citep{pxd065835} and CSF \citep{bader2020} proteomics; and drug response
-from CCLE expression to PRISM AUC \citep{corsello2020,depmap24q4}. Seeds are deliberately standard:
-log band power with L2 logistic regression (scalp EEG); line length, RMS and band power with
-gradient boosting and smoothing (neonatal EEG); Fisher-$z$ CC200 connectivity with logistic
-regression (fMRI); genus abundance with a random forest (16S); log$_2$, median centring and
+depression and ADHD (TDBRAIN \citep{vandijk2022tdbrain}; the two tasks share 90 controls);
+schizophrenia (ASEEG \citep{aseeg}); per-second neonatal seizure detection (Helsinki
+\citep{stevenson2019helsinki}); autism and ADHD from fMRI connectivity (ABIDE I
+\citep{dimartino2014abide}, ADHD-200; \citep{pcp}); colorectal cancer (CRC) and IBD from 16S stool
+profiles (MicrobiomeHD \citep{duvallet2017,baxter2016}); Alzheimer's disease (AD) from plasma
+\citep{pxd065835} and CSF \citep{bader2020} proteomics; and drug response from CCLE expression to
+PRISM AUC \citep{corsello2020,depmap24q4}. Seeds were written before any loop ran and are
+deliberately standard: log band power with L2 logistic regression (scalp EEG); line length, RMS and
+band power with gradient boosting and smoothing (neonatal EEG); Fisher-$z$ CC200 connectivity with
+logistic regression (fMRI); genus abundance with a random forest (16S); log$_2$, median centring and
 logistic regression (proteomics); and ridge regression on the most variable genes (drug response).
 
 \begin{table}[!tbp]
 \centering
-\caption{Tasks. Eval $n$ = held-out subjects in split 1 (recordings for TUAB); other splits differ
-by at most a few. $^\dagger$Size-weighted mean of per-site (or per-study) AUROCs.}
+\caption{Tasks. Eval $n$ = held-out units in split 1 (recordings for TUAB; stool samples for IBD,
+grouped by person or twin pair); other splits differ by at most a few. $^\dagger$Size-weighted mean
+of per-site (or per-study) AUROCs.}
 \label{tab:tasks}
 \footnotesize
 \setlength{\tabcolsep}{4pt}
@@ -150,7 +157,7 @@ Neonatal seizure & Helsinki & seizure second (2/3 experts) & concat.\ AUROC & 20
 Autism & ABIDE I, 20 sites & ASD vs.\ TD & AUROC$^\dagger$ & 262 (129) & -- \\
 ADHD & ADHD-200, 8 sites & ADHD vs.\ TD & AUROC$^\dagger$ & 217 (82) & -- \\
 CRC & MicrobiomeHD, Baxter & CRC vs.\ healthy & AUROC & 73 (30) & Zeller, Zackular, Xiang, Zhao \\
-IBD & MicrobiomeHD, 4 studies & IBD vs.\ control & AUROC$^\dagger$ & 146 (117) & -- \\
+IBD & MicrobiomeHD, 4 studies, stool & IBD vs.\ control & AUROC$^\dagger$ & 113 samples / 103 groups (91) & -- \\
 AD, plasma & PXD065835 & AD vs.\ control & AUROC & 22 (13) & -- \\
 AD, CSF & Bader 2020, 4 cohorts & clinical AD vs.\ non-AD & AUROC$^\dagger$ & 34 (12) & -- \\
 Drug response & CCLE $\to$ PRISM, 200 drugs & dose--response AUC & per-drug Pearson $r$ & 120 cell lines & -- \\
@@ -163,48 +170,58 @@ site to the solution and scored multi-site tasks with pooled AUROC; the loop use
 (\cref{sec:shortcuts}). All other results use v2: no demographics or motion; site, study and
 batch only for harmonization; multi-site tasks scored \emph{within site} (size-weighted mean of
 per-site AUROCs); and TDBRAIN tasks restricted to the age range shared by patients and controls.
-v2 was designed after we saw the v1 results.
+v2 was designed after we saw v1 results, and the v2 loops were rerun on the same split seeds; this
+and other post-hoc decisions are listed in \cref{app:disclosures}.
 
 \paragraph{Evaluation.} For each split seed (1, 2, 3), 25\% of subjects (grouped by subject;
 stratified by label and site) form a held-out \emph{Eval} set and the rest a \emph{dev pool}. The
 loop optimizes \emph{Dev}, a 5-fold grouped CV score inside the dev pool. After the loop, seed and
 champion are refit on the whole dev pool and scored \emph{once} on Eval and on external datasets.
-The three Eval sets overlap, so splits are not independent replicates.
+The three Eval sets overlap, so splits are not independent replicates. On 9 tasks, split 1 was
+rerun twice more from scratch (only the LLM's sampling differs) to measure run-to-run variation.
 
 \paragraph{Same-budget baselines.} All arms start from the same seed, use the same harness, time
 limit and 20 Dev evaluations, keep a candidate only if it beats the seed on Dev, and are scored once
 on the same Eval sets. \emph{One-shot}: one LLM proposal. \emph{Best-of-20}: 20 independent LLM
 proposals that see the briefs and the seed but no history or scores, isolating the value of feedback.
 \emph{Optuna}: 20 trials of multivariate TPE over a hand-written parameterized pipeline per project
-(which feature blocks to include, which classifier, its regularization). These search spaces were
-written \emph{after} the main study and include feature families the loop had used, which makes
-this baseline conservative from the loop's point of view.
+(which feature blocks to include, which classifier, its regularization). The search spaces were
+written \emph{after} the main study and include feature families the loop had found, so this
+baseline is informed by the loop's results: stronger than an independent search, and conservative
+from the loop's point of view. Arms are equalized in Dev evaluations, not in compute or LLM tokens.
 
-\paragraph{Statistics.} Per task, the gain is the mean over three splits; its CI and two-sided $p$
-come from a paired bootstrap that resamples subjects from the union of the Eval sets (2{,}000 draws,
-$(b+1)/(B+1)$ per tail \citep{davison1997bootstrap}), Holm-adjusted across 12 tasks
-\citep{holm1979}. This test treats the fitted models as fixed; it does not capture variation between
-splits or loop runs, which we report separately. Pooled over the 11 AUROC tasks, we report the
-equal-weight mean of task gains with a $t$-interval (primary) and DerSimonian--Laird random effects
-\citep{dersimonian1986} (secondary). Run-to-run repeats, shortcut-only models and the transduction
-audit are described in \cref{app:methods}.
+\paragraph{Statistics.} Per task, the gain is the mean over three splits. We report three two-sided
+$p$-values (2{,}000 bootstrap draws, $(k+1)/(n+1)$ convention \citep{davison1997bootstrap}, Holm-adjusted
+across 12 tasks \citep{holm1979}): a \emph{subject} bootstrap that resamples subjects and treats the
+fitted models as fixed; a \emph{hierarchical} bootstrap that resamples splits, then loop runs where
+repeats exist, then subjects; and a $t$-test across the three split gains. Per-task claims use the
+hierarchical $p$. With only three splits its split level is coarse: when all three split gains have
+the same sign, resampling splits cannot produce a mean of the opposite sign, so the hierarchical $p$
+then largely reflects sign consistency plus subject noise. We therefore also report sign agreement
+across independent repeats. Pooled over the 11 AUROC tasks we report the equal-weight mean of task
+gains with a $t$-interval (primary) and DerSimonian--Laird random effects \citep{dersimonian1986}
+(secondary), with leave-one-task-out and confound-based sensitivity analyses. Details of the
+shortcut-only models, the confound analysis and the transduction and leakage audits are in
+\cref{app:methods}.
 
 % ===========================================================================================
 \section{Results}\label{sec:results}
 % ===========================================================================================
 
 \subsection{Development gains are guaranteed; held-out gains are not}\label{sec:dev-eval}
-Across 36 runs the loop ran 710 rounds and kept 283 candidates (10 failed rounds). Dev improved in
-36/36 runs, as the keep-if-better rule guarantees; Eval improved in 27/36, with per-split
-$p<0.05$ in 15/36 (\cref{tab:main-app}). The mean Dev gain (0.072) exceeded the mean Eval gain
-(0.049) and the two were only moderately correlated ($r=0.38$; \cref{fig:dev-eval}). CRC, plasma AD
-and ABIDE autism lost or stayed flat on Eval despite consistent Dev gains (\cref{tab:combined}).
+Across 36 runs the loop ran 710 rounds and kept 281 candidates (7 failed rounds). Dev improved in
+36/36 runs, as the keep-if-better rule guarantees; Eval improved in 25/36, with per-split
+$p<0.05$ in 15/36 (\cref{tab:main-app}). The mean Dev gain (0.075) exceeded the mean Eval gain
+(0.047) and the two were only moderately correlated ($r=0.37$; \cref{fig:dev-eval}). CRC, plasma AD,
+ABIDE autism and IBD lost or stayed flat on Eval in at least two of three splits despite consistent
+Dev gains (\cref{tab:combined}).
 
 \begin{table}[!tbp]
 \centering
-\caption{Held-out Eval per arm with the same budget of 20 Dev evaluations (bold: best non-seed
-arm), and the loop's gain over the seed and over Optuna with Holm-adjusted bootstrap $p$-values
-(bold gain: $p_\text{Holm}<0.05$). splits $\uparrow$: splits where the loop beat the seed on Eval.
+\caption{Held-out Eval per arm with the same budget of 20 Dev evaluations (bold: best non-seed arm),
+and the loop's gain over the seed and over Optuna with Holm-adjusted hierarchical bootstrap
+$p$-values (bold gain: $p_\text{Holm}<0.05$; $^\wedge$: significant only conditionally on the fitted
+models). splits $\uparrow$: splits where the loop beat the seed on Eval.
 $^\dagger$Within-site AUROC. $^\ddagger$Mean per-drug Pearson $r$.
 $^\S$Gain carried by split 1, whose seed was below chance (split gains $+0.264$, $+0.001$, $+0.015$).}
 \label{tab:combined}
@@ -215,17 +232,18 @@ $^\S$Gain carried by split 1, whose seed was below chance (split gains $+0.264$,
 
 \subsection{Feedback, not the LLM alone, produces the gains}\label{sec:baselines-results}
 \Cref{tab:combined} and \cref{fig:baselines} compare the loop with the baselines. One LLM proposal
-was kept in 15/36 splits and changed Eval by $+0.002$ on average. Twenty proposals without feedback
+was kept in 17/36 splits and changed Eval by $+0.004$ on average. Twenty proposals without feedback
 did better ($+0.014$) but were kept in only 25/36 splits: on neonatal seizure detection and ADHD
 (TDBRAIN), none of 120 independent proposals beat the seed on Dev, while the loop improved every
-split of both tasks. The loop's own first two rounds on neonatal seizures also failed in every split;
-improvement came once it could build on what had failed. All 720 best-of-20 proposals ran, so low
-adoption reflects proposal quality rather than a broken baseline.
+split of both tasks. The loop's own first two rounds on neonatal seizures also failed in every split,
+and its first kept change came in round 3. All 720 best-of-20 proposals ran, so low adoption
+reflects proposal quality, not a broken baseline.
 
-Optuna gained $+0.035$ on average and matched the loop on both TDBRAIN tasks (MDD 0.946 vs.\ 0.954;
-ADHD 0.918 vs.\ 0.922) and on ADHD-200 (0.650 vs.\ 0.665); it beat the loop on plasma and CSF AD.
-The loop's advantage over Optuna was Holm-significant only on abnormal EEG ($+0.029$) and neonatal
-seizure detection ($+0.075$).
+The loop-informed Optuna search gained $+0.033$ on average ($p=0.073$). It matched the loop on both
+TDBRAIN tasks (MDD 0.946 vs.\ 0.954; ADHD 0.918 vs.\ 0.922) and on ADHD-200 (0.650 vs.\ 0.665), and
+beat it on plasma and CSF AD; on IBD a single LLM proposal did best. The loop's advantage over
+Optuna was Holm-significant only on abnormal EEG ($+0.029$) and neonatal seizure detection
+($+0.075$).
 
 \begin{figure}[!tbp]
 \centering
@@ -235,113 +253,143 @@ small markers: individual splits.}
 \label{fig:baselines}
 \end{figure}
 
-\subsection{Corrected and pooled statistics}\label{sec:stats-results}
-Against the seed, the loop's gain is Holm-significant on five tasks and its loss on CRC
-(\cref{tab:combined}). The ADHD-200 gain rests on one split (a $t$-test across splits gives
-$p=0.39$), which the subject bootstrap does not capture. Pooled over 11 AUROC tasks
-(\cref{tab:pooled}), the loop gained $+0.052$ over the seed ($p=0.023$; $I^2=85\%$), $+0.038$ over
-best-of-20 ($p=0.051$) and $+0.017$ over Optuna ($p=0.29$). The gain over the seed depends on the
-TDBRAIN tasks, whose signal does not transfer (\cref{sec:transfer}): without them it is $+0.037$
-($p=0.11$), and $+0.030$ ($p=0.21$) without ADHD-200 as well. Per-task results for all comparisons
-are in \cref{tab:stats} and \cref{fig:meta}.
+\subsection{Per-task and pooled statistics}\label{sec:stats-results}
+With the hierarchical bootstrap, the loop's gain over the seed is Holm-significant on four tasks:
+abnormal EEG ($+0.071$), MDD ($+0.104$) and ADHD ($+0.137$) on TDBRAIN, and neonatal seizure
+detection ($+0.072$) (\cref{tab:combined}). The CRC loss ($-0.055$) and the ADHD-200 gain ($+0.093$)
+are significant only conditionally on the fitted models; the ADHD-200 gain rests on one split. The
+caveat in \cref{sec:methods} applies to the four significant tasks: their three split gains all
+have the same sign, and the $t$-test across splits, which does not have that problem but has little
+power, gives $p=0.021$ (abnormal EEG), $0.028$ (neonatal seizure), $0.053$ (MDD) and $0.13$ (ADHD on
+TDBRAIN). Independent repeats are the stronger evidence. On abnormal EEG, neonatal seizure detection
+and MDD, all five independent loops (three on split 1, one each on splits 2 and 3) improved on the
+seed (abnormal EEG $+0.054$ to $+0.091$; neonatal seizure $+0.048$ to $+0.087$; MDD $+0.057$ to
+$+0.141$). ADHD on TDBRAIN has no repeats.
+
+Pooled over 11 AUROC tasks (\cref{tab:pooled}), the loop gained $+0.050$ over the seed
+($p=0.029$; $I^2=85\%$), $+0.036$ over best-of-20 ($p=0.063$) and $+0.017$ over Optuna ($p=0.28$).
+The gain over the seed is fragile: leaving out any one of six tasks (ADHD-200, MDD, ADHD on TDBRAIN,
+schizophrenia, abnormal EEG or neonatal seizure) gives $p=0.054$--$0.064$; counting the two TDBRAIN
+tasks, which share controls, as one dataset gives $+0.043$ ($p=0.062$); and leaving out TDBRAIN and
+ADHD-200 gives $+0.027$ ($p=0.25$). The loop's advantage over Optuna stays at $+0.017$ to $+0.021$
+and non-significant in every variant.
 
 \begin{table}[!tbp]
 \centering
 \caption{Pooled Eval gain over the 11 AUROC tasks: equal-weight mean with $t$-interval (primary) and
-DerSimonian--Laird random effects (secondary). Sensitivity rows drop the TDBRAIN tasks (separate
-recruitment; no transfer) and then ADHD-200 (gain carried by one split).}
+DerSimonian--Laird random effects (secondary). Sensitivity rows treat the TDBRAIN tasks (shared
+controls, separate recruitment, no transfer) as one dataset or drop them, and drop ADHD-200 (gain
+carried by one split). Leave-one-task-out results are in the released files.}
 \label{tab:pooled}
 \footnotesize
 \setlength{\tabcolsep}{4pt}
 \resizebox{0.92\textwidth}{!}{\input{tables/pooled.tex}}
 \end{table}
 
-\subsection{The loop finds shortcuts when they exist}\label{sec:shortcuts}
+\subsection{Shortcuts and demographic confounds}\label{sec:shortcuts}
 Under protocol v1, every ADHD-200, ABIDE and pooled-IBD champion referenced non-biological inputs:
 site, age and sex (ADHD-200); site, age, sex and head motion (ABIDE); study identity (IBD). These
 inputs carry substantial signal alone (\cref{fig:shortcuts}): site plus age and sex reach a pooled
-Eval AUROC of 0.775 on ADHD-200, close to the v1 champion (0.813); study identity alone gives 0.691
-on IBD. Rescored within site, the v1 ADHD-200 champion drops from 0.813 to 0.731, close to the v2
-champion (0.717). Within-site scoring removes the site shortcut but not the demographic one: on
-ADHD-200, age and sex alone give a within-site AUROC of 0.647, just below the v2 champion's 0.665.
-Removing demographic \emph{inputs} does not stop a model from using demographic \emph{signal}
-encoded in the imaging data.
+Eval AUROC of 0.775 on ADHD-200, close to the v1 champion (0.813), and study identity alone gives
+0.693 on IBD. Rescored within site, the v1 ADHD-200 champion drops from 0.813 to 0.731, close to
+the v2 champion (0.717).
+
+Within-site scoring removes the site shortcut but not demographic signal, which brain data encode
+even when age and sex are not given as inputs. We therefore tested whether age and sex explain the
+v2 predictions (\cref{tab:confounds}, \cref{fig:confounds}). On ADHD-200, age and sex alone reach a
+within-site AUROC of 0.645, close to the champion's 0.665; adjusting for them lowers the champion to
+0.621 (seed 0.545), and the prediction adds significant information beyond age and sex in only one
+of three splits. On ABIDE and both TDBRAIN tasks, age and sex alone are at chance (0.45--0.51) and
+adjustment changes the AUROC by at most 0.021; the loop's MDD gain shrinks from $+0.104$ to $+0.076$
+after adjustment and its ADHD (TDBRAIN) gain is unchanged ($+0.140$). Age and sex therefore do not
+explain the TDBRAIN results, but they cannot rule out other differences between separately recruited
+patients and controls (\cref{sec:transfer}). ASEEG and our TUAB build carry no demographics.
 
 \begin{figure}[!tbp]
 \centering
 \includegraphics[width=\linewidth]{fig10_shortcuts.pdf}
 \caption{Left: Eval AUROC of shortcut-only models (no biological input), pooled (solid) and within
-site (hatched). Right: archived v1 champions rescored pooled and within site, with the v2 champion.}
+site (hatched). Right: archived v1 champions rescored pooled and within site, with the v2 champion
+(no v2 point for IBD: the redefined v3 task is scored on different Eval samples).}
 \label{fig:shortcuts}
 \end{figure}
 
 \subsection{In-distribution gains did not transfer to other cohorts}\label{sec:transfer}
-Applied unchanged to external data (\cref{fig:transfer}, \cref{tab:external}), only abnormal EEG
-transferred: on the official TUAB evaluation split the champion beat the seed in all three splits
-(AUROC 0.867 $\to$ 0.928, all CIs excluding zero). That split is from the same hospital, so it is a
-near-in-distribution check. The TDBRAIN depression seed was \emph{inverted} on the Mumtaz cohort
-(AUROC 0.25--0.29) and the champions reached only 0.28--0.62. The numerical gain moves an inverted
-model towards chance, which points to dataset-specific case/control signal rather than a
-transferable marker. The schizophrenia champion was worse than the seed on the MSU cohort in all
-three splits (0.696 $\to$ 0.538) and mixed on RepOD; the CRC champion lost on all four external
-cohorts on average.
+Applied unchanged to external data (\cref{fig:transfer}, \cref{tab:external}), the TDBRAIN depression
+seed was \emph{inverted} on the Mumtaz cohort (AUROC 0.25--0.29), and the champions were below or
+indistinguishable from chance in all three splits (0.28--0.62). The numerical gain moves an inverted
+model towards chance; it is not evidence of a transferable marker. The schizophrenia champion was
+worse than the seed on the MSU cohort in all three splits (0.696 $\to$ 0.538) and above chance in
+only one; on the small RepOD cohort neither seed nor champion was distinguishable from chance. The
+CRC champion stayed above chance on the four external cohorts in 11 of 12 split--cohort pairs, but
+beat the seed in only 2 of 12. Only abnormal EEG improved on its additional test set (AUROC 0.867
+$\to$ 0.928, all CIs excluding chance), and that set is the official TUAB evaluation split from the
+same hospital and protocol: a within-hospital check, not transfer. Acquisition differences (amplifier,
+montage, recording length, age range) are an alternative explanation to biology for every failure to
+transfer.
 
 \begin{figure}[!tbp]
 \centering
-\includegraphics[width=0.72\linewidth]{fig11_transfer.pdf}
-\caption{In-distribution Eval gain vs.\ external-dataset gain for the same model, one point per
-split and external set. Dashed: equal gain.}
+\includegraphics[width=0.78\linewidth]{fig11_transfer.pdf}
+\caption{External datasets, absolute AUROC with 95\% CI for the loop champion (filled) and the seed
+(hollow), one row per split; ticks mark the champion's in-distribution Eval score; dashed: chance.}
 \label{fig:transfer}
 \end{figure}
 
-\subsection{Variance and transduction}\label{sec:variance}
-Repeating the loop on the same split varied the Eval gain less than drawing a new split
-(run-to-run SD median 0.016 vs.\ split-to-split 0.042, smaller for 6 of 7 tasks; \cref{fig:variance}).
-The sign was stable on IBD, MDD and schizophrenia and flipped between repeats on CRC, CSF AD and drug
-response; repeats were not affordable for abnormal EEG or neonatal seizure. All seeds were exactly
-inductive; scoring Eval inside a reference batch built from the dev pool changed champion scores by
-$+0.001$ on average (worst $-0.024$), so reported scores do not exploit Eval-set statistics
-(\cref{fig:audit}). Eleven champions output batch-relative ranks and would need a reference cohort
-to score single patients.
+\subsection{Variance, transduction and leakage}\label{sec:variance}
+Repeating the loop on the same split varied the Eval gain less than drawing a new split (run-to-run
+SD 0.005--0.044, median 0.017; split-to-split median 0.042; smaller for 8 of 9 tasks;
+\cref{fig:variance}). The sign was stable across repeats on abnormal EEG, neonatal seizure, MDD and
+schizophrenia (all positive), negative on IBD in all three repeats, and flipped on CRC, CSF AD and
+drug response. All seeds were exactly inductive. Scoring Eval inside a reference batch built from
+the dev pool changed champion scores by $-0.0006$ on average (worst $-0.024$), so reported scores do
+not exploit Eval-set statistics (\cref{fig:audit}); 11 champions output batch-relative ranks and would
+need a reference cohort to score single patients. Finally, every champion was rescored in
+network-isolated containers with subject identifiers replaced by order-preserving tokens; all scores
+were reproduced to within $4\times10^{-4}$, whereas a positive-control solution that read labels from
+identifiers dropped from AUROC 1.000 to 0.500. A static scan of all 2{,}010 saved solution files found
+no access to files, network or harness beyond the resources a task provides (\cref{app:methods}).
 
 % ===========================================================================================
 \section{Discussion}\label{sec:discussion}
 % ===========================================================================================
 \paragraph{When the loop helped.} The clearest gains came on abnormal EEG and neonatal seizure
 detection: signal-processing tasks with large or well-annotated data and clinically meaningful
-labels. They were the only tasks where the loop beat a loop-informed Optuna search, and on both,
-independent LLM proposals almost never beat the seed. The active ingredient is feedback, not the
-LLM's prior knowledge alone.
+labels. They were the only tasks where the loop beat a loop-informed Optuna search, the gains
+replicated in all five independent loops, and independent LLM proposals almost never beat the seed.
+The active ingredient is feedback, not the LLM's prior knowledge alone.
 
-\paragraph{When it did not.} Elsewhere the loop was not reliably better than ordinary search, and
-on three tasks it was worse than the seed on held-out data despite consistent Dev gains. Its
-largest in-distribution gains, on TDBRAIN, were matched by Optuna and did not transfer, pointing to
-dataset-specific signal that any optimizer would find. Given site and demographics, the loop used
-them. A held-out set scored once, a non-LLM baseline, shortcut-only models and an external cohort
-each changed our reading of at least one task; the Dev curve alone would have changed none. Our
-numbers are also not better than published results where a rough comparison is possible (Helsinki
-0.899 vs.\ about 0.955 \citep{tapani2022}; on CRC the seed already matched the MicrobiomeHD baseline
-\citep{duvallet2017}).
+\paragraph{When it did not.} Elsewhere the loop was not reliably better than ordinary search, and on
+four tasks it lost or stayed flat on held-out data in most splits despite consistent Dev gains. Its
+largest in-distribution gains, on TDBRAIN, were matched by Optuna, are not explained by age or sex,
+and did not transfer, which points to dataset-specific signal that any optimizer would find. Given
+site and demographics, the loop used them. A held-out set scored once, a non-LLM baseline,
+shortcut-only and confound models, and an external cohort each changed our reading of at least one
+task; the Dev curve alone would have changed none. Where a rough comparison with published results is
+possible, the champions were not better (Helsinki 0.899 vs.\ about 0.955 \citep{tapani2022}; on CRC
+the seed already matched the MicrobiomeHD baseline \citep{duvallet2017}).
 
-\paragraph{Limitations.} Several Eval sets are small (20--43 subjects), the three splits overlap,
-and repeats cover only 7 of 12 tasks. We used one LLM at one setting and a CPU budget that favours
-light models. The Optuna spaces were written with knowledge of the loop's results. TDBRAIN cases and
-controls were recorded separately, and ADHD-200 groups differ in sex and age within sites. Protocol
-v2 was designed after seeing v1. Further dataset caveats are in \cref{app:caveats}.
+\paragraph{Limitations.} Several Eval sets are small (20--43 subjects), the three splits overlap, and
+with three splits per-task inference across splits is weak; repeats cover 9 of 12 tasks. The v2
+protocol, the IBD task definition and the Optuna search spaces were fixed after Eval results had been
+seen, and no confirmation on fresh splits with a pre-registered analysis was run. We used one LLM at
+one setting and a CPU budget that favours light models, and three early loops used an earlier brief
+wording. TDBRAIN cases and controls were recorded separately. Further caveats are in
+\cref{app:caveats,app:disclosures}.
 
 \section{Conclusion}\label{sec:conclusion}
 An LLM autoresearch loop with feedback improved held-out performance over a simple seed on most of
 12 biomedical tasks, clearly more than the same LLM without feedback, but significantly more than a
-tuned non-LLM search on only two signal-processing tasks. The same loop exploited site and
-demographic shortcuts when allowed, and its psychiatric-EEG gains did not transfer. Gains from such
-a loop are a hypothesis to test on held-out, shortcut-free and external data, not evidence of a
-better biomarker.
+loop-informed non-LLM search on only two signal-processing tasks, where its gains also replicated
+across independent runs. The same loop exploited site and demographic shortcuts when allowed, and its
+psychiatric-EEG gains did not transfer. Gains from such a loop are a hypothesis to test on held-out,
+shortcut-free and external data, not evidence of a better biomarker.
 
 \section*{Data and code availability}
 Code, all loop records, champions, Eval predictions and robustness analyses:
 \url{https://github.com/radnyees/justautoeverything}. Raw data are not redistributed (TDBRAIN data
 use agreement, TUH/NEDC terms, CC BY-NC licences); \texttt{projects/*/data/} contains download and
-preprocessing scripts. Compute: \$117.65 on Modal CPU containers (LLM calls not included).
+preprocessing scripts. Compute: \$142.31 on Modal CPU containers (LLM calls not included).
 
 % ===========================================================================================
 % Appendix before the references, so that every figure precedes the reference list.
@@ -357,12 +405,15 @@ and lists the available libraries (numpy, scipy, scikit-learn, LightGBM, XGBoost
 pyRiemann, nilearn, PyTorch on CPU, among others). Candidates run on Modal containers with 2--16
 cores depending on the task.
 
-\paragraph{Run-to-run variance.} For the seven cheapest tasks, split 1 was rerun twice more from
-scratch (same seed, Dev CV and Eval set; only the LLM's sampling differs).
-
 \paragraph{Shortcut-only models.} On the four multi-site tasks, L2 logistic regressions using only site
 or study one-hot codes and/or demographics were fit on the dev pool and scored on Eval with both
 the pooled (v1) and within-site (v2) metric.
+
+\paragraph{Age/sex confounds.} For tasks with per-subject age and sex (ADHD-200, ABIDE, TDBRAIN MDD and
+ADHD), we report the Eval AUROC of a model using age and sex only (fit on the dev pool); the AUROC of
+the seed or champion prediction after adjusting for age and sex (and site); whether the prediction
+tracks age or sex within controls; and a likelihood-ratio test of whether the prediction adds
+information about the label beyond age, sex and site.
 
 \paragraph{Transduction audit.} The Eval protocol featurizes dev-pool and Eval items in one call and
 passes the whole Eval batch to \texttt{fit\_predict}. For every seed and champion we tested (i)
@@ -371,9 +422,44 @@ score, with Eval split into 20 chunks (10 for large tasks), each featurized with
 predicted on its own; and (iii) a \emph{reference-batch} score, as (ii) but each chunk predicted
 inside a batch of dev pool plus chunk, so batch statistics come from training-time data.
 
+\paragraph{Leakage audit.} The loops' candidates were scored in containers that had network access and
+the data volume (including labels) mounted, and some datasets encode the label in subject identifiers.
+We therefore (i) rescored every champion, and the seeds of tasks whose identifiers encode the label,
+in network-isolated containers with real identifiers, with identifiers replaced by order-preserving
+tokens, and with random tokens; (ii) ran positive controls (a solution that reads the label from the
+identifier; a network probe); and (iii) statically scanned all 2{,}010 saved solution files for file,
+network, subprocess and harness access. Random tokens change scores by up to 0.034 on Eval because
+they change the assignment of subjects to inner-CV folds; order-preserving tokens reproduce every
+score. Rejected candidates of the 36 main loops were not saved and are covered only through their
+champions.
+
 \paragraph{Pooled statistics.} Drug response (Pearson $r$) is excluded from pooling. For random
 effects, task standard errors are floored at 0.005. Benjamini--Hochberg adjusted values
-\citep{benjamini1995} are in the released files.
+\citep{benjamini1995} and leave-one-task-out estimates for every comparison are in the released files.
+
+\section{Disclosures}\label{app:disclosures}
+\paragraph{Decisions made after Eval results had been seen.} (i) The single-study IBD task (16 stool
+controls) was replaced by a pooled four-study task. (ii) Protocol v2 was introduced after v1 Eval
+results and v1 champion code had been seen; v2 loops were rerun on the same split seeds. (iii) Two
+Mumtaz subjects without eyes-closed data were excluded. (iv) The Optuna search spaces were written
+after all loop results. (v) The equal-weight pooled mean was made primary after DerSimonian--Laird gave
+infinite weight to arms identical to the seed. (vi) A leakage in the pooled IBD task (biopsies and
+repeated samples of one person or co-twin could fall in both Dev and Eval) was found by our audit; the
+task was redefined as stool only, grouped by person or twin pair, and all IBD runs were redone. Every
+change that altered a task reran that task's loops from scratch.
+
+\paragraph{Unequal conditions.} The main loops of CRC, plasma AD and drug response started before
+protocol v2 and used the v1 wording of the brief (these tasks provide no demographics either way);
+their split-1 gains differ from the two v2-worded repeats by no more than run-to-run variation on
+other tasks. Claude Code CLI versions 2.1.287--2.1.296 were used; model and effort were identical.
+Two ABIDE loops stopped early (19 and 11 rounds).
+
+\paragraph{Data-level choices.} The 200 drugs were selected by variance across all cell lines,
+including later Eval lines. Proteomics intensities are as released, normalized across all samples by
+the original pipelines. Helsinki smoothing windows are centred (non-causal), acceptable offline but not
+for online detection. Subject identifiers that encode the label were visible to solutions; no solution
+read them (\cref{app:methods}). The seeds were written with an LLM coding assistant before any loop
+ran.
 
 \section{Dataset caveats}\label{app:caveats}
 \begin{itemize}
@@ -389,6 +475,8 @@ effects, task standard errors are floored at 0.005. Benjamini--Hochberg adjusted
         leave-one-out or other annotation rules \citep{tapani2022,hogan2025}.
   \item \textbf{ABIDE / ADHD-200.} Within-site AUROC is stricter than the pooled metrics usually
         reported \citep{abraham2017,heinsfeld2018}.
+  \item \textbf{IBD.} Four MicrobiomeHD studies, stool samples only, grouped by person (by twin pair in
+        the twin study); several people contribute more than one sample.
   \item \textbf{Proteomics.} Plasma: single centre, the only open labelled AD plasma MS set we found.
         CSF label = clinical diagnosis.
   \item \textbf{Drug response.} 200 most variable drugs ($\geq$70\% coverage) from the PRISM
@@ -410,20 +498,39 @@ with Eval gain $>0$; ``sig.'': splits with one-sided per-split bootstrap $p<0.05
 
 \begin{table}[!htbp]
 \centering
-\caption{Per-task Eval differences (mean over 3 splits) with Holm-adjusted two-sided bootstrap
-$p$-values across 12 tasks; bold: $p_\text{Holm}<0.05$.}
+\caption{Per-task Eval differences (mean over 3 splits) with Holm-adjusted two-sided $p$-values across
+12 tasks from the hierarchical (hier.) and subject (subj.) bootstrap. Bold gain: hierarchical
+$p_\text{Holm}<0.05$; $^\wedge$: subject-bootstrap $p_\text{Holm}<0.05$ only.}
 \label{tab:stats}
 \footnotesize
-\setlength{\tabcolsep}{3pt}
+\setlength{\tabcolsep}{2.5pt}
 \resizebox{\textwidth}{!}{\input{tables/stats.tex}}
 \end{table}
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\linewidth]{fig8_meta_forest.pdf}
-\caption{Per-task Eval differences with 95\% CIs (task-level subject bootstrap) for five comparisons.
-Filled: Holm-adjusted $p<0.05$; diamond: equal-weight mean of the 11 AUROC tasks.}
+\caption{Per-task Eval differences with 95\% CIs for five comparisons. Diamond: equal-weight mean of
+the 11 AUROC tasks.}
 \label{fig:meta}
+\end{figure}
+
+\begin{table}[!htbp]
+\centering
+\caption{Age and sex (mean over 3 splits; within-site AUROC for ADHD-200 and ABIDE). ``age+sex
+only'': model using demographics only; ``adjusted'': prediction adjusted for age, sex (and site); LR
+test: splits where the prediction adds information about the label beyond age, sex and site.}
+\label{tab:confounds}
+\footnotesize
+\input{tables/confounds.tex}
+\end{table}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.7\linewidth]{fig13_confounds.pdf}
+\caption{Eval AUROC of the prediction (blue), the prediction adjusted for age and sex (orange) and
+age and sex alone (grey). Hollow: seed; filled: champion; dashed: chance.}
+\label{fig:confounds}
 \end{figure}
 
 \begin{figure}[!htbp]
@@ -437,7 +544,7 @@ Filled: Holm-adjusted $p<0.05$; diamond: equal-weight mean of the 11 AUROC tasks
 \centering
 \includegraphics[width=0.6\linewidth]{fig9_variance.pdf}
 \caption{Eval gain of three independent loops on split 1 (filled) and of the loops on splits 2--3
-(hollow), for the seven tasks with repeats.}
+(hollow), for the nine tasks with repeats.}
 \label{fig:variance}
 \end{figure}
 
@@ -456,13 +563,6 @@ Filled: reference-batch score; hollow: chunks scored in isolation.}
 \footnotesize
 \input{tables/external.tex}
 \end{table}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.8\linewidth]{fig5_external_transfer.pdf}
-\caption{External-dataset scores. Hollow: seed; filled: champion; dashed: chance.}
-\label{fig:external}
-\end{figure}
 
 \begin{figure}[!htbp]
 \centering
