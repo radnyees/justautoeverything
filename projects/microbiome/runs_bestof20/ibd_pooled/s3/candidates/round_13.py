@@ -1,6 +1,8 @@
-"""Genus-level log relative abundance, z-scored within each study (label-free harmonization) + random forest."""
+"""Genus-level relative abundance, percentile-ranked within each study (label-free batch
+harmonization), + random forest."""
 import numpy as np
 import pandas as pd
+from scipy.stats import rankdata
 from sklearn.ensemble import RandomForestClassifier
 
 
@@ -8,36 +10,27 @@ def _study_labels(items, ctx):
     meta = ctx.get("meta") if isinstance(ctx, dict) else None
     if meta is None or "study" not in getattr(meta, "columns", []):
         return np.zeros(len(items), dtype=object)
-    try:
-        s = meta["study"].reindex(items.index)
-        if s.isna().any():
-            raise KeyError
-        return s.astype(str).values
-    except Exception:
-        if len(meta) == len(items):
-            return meta["study"].astype(str).values
-        return np.zeros(len(items), dtype=object)
+    if meta.index.isin(items.index).all() and items.index.isin(meta.index).all():
+        return meta.loc[items.index, "study"].astype(str).values
+    if len(meta) == len(items):
+        return meta["study"].astype(str).values
+    return np.zeros(len(items), dtype=object)
 
 
 def featurize(items, ctx):
     rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
     genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
     G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
-    L = np.log10(G + 1e-5)
-
-    # per-study standardization of each genus (label-free, removes study/batch offsets)
-    study = _study_labels(items, ctx)
-    Z = L.copy()
-    vals = L.values
+    vals = G.values.astype(float)
     out = np.zeros_like(vals)
-    for s in np.unique(study):
-        m = study == s
-        mu = vals[m].mean(axis=0)
-        sd = vals[m].std(axis=0)
-        sd[sd < 1e-8] = 1.0
-        out[m] = (vals[m] - mu) / sd
-    Z.loc[:, :] = out
-    return Z
+    studies = _study_labels(items, ctx)
+    for s in pd.unique(studies):
+        m = studies == s
+        n = m.sum()
+        sub = vals[m]
+        # percentile rank per genus within the study (ties, e.g. zeros, share a rank)
+        out[m] = np.apply_along_axis(lambda v: rankdata(v, method="average"), 0, sub) / max(n, 1)
+    return pd.DataFrame(out, index=G.index, columns=G.columns)
 
 
 def fit_predict(F_train, y_train, F_test, ctx):

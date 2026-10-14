@@ -1,0 +1,80 @@
+{
+ "seed": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.7174133922975582,
+  "score_joint": 0.7174133922975582,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_alpha",
+    "_level",
+    "_lineage",
+    "_md_index",
+    "_shannon",
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": [
+    {
+     "function": "_within_group_rank",
+     "line": 172,
+     "code": "out[m] = rankdata(score[m]) / m.sum()"
+    }
+   ]
+  },
+  "score": 0.6038293171149738,
+  "score_joint": 0.7249787757568782,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "seed_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": []
+  },
+  "score": 0.7174133922975582,
+  "score_joint": 0.7174133922975582,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ },
+ "champion_ref": {
+  "static": {
+   "has_featurize": true,
+   "functions": [
+    "_alpha",
+    "_level",
+    "_lineage",
+    "_md_index",
+    "_shannon",
+    "featurize"
+   ],
+   "hits": [],
+   "batch_relative_outputs": [
+    {
+     "function": "_within_group_rank",
+     "line": 172,
+     "code": "out[m] = rankdata(score[m]) / m.sum()"
+    }
+   ]
+  },
+  "score": 0.7544788748832867,
+  "score_joint": 0.7249787757568782,
+  "feat_max_rel_diff": 0.0,
+  "n_chunks": 20
+ }
+}

@@ -1,134 +1,85 @@
-"""Genus-level relative abundance + random forest (study x class balanced weights), averaged
-with an L2 logistic regression on per-study-centred genus + family CLR features, using
-percentile ranks computed within each study (matching the within-study AUROC metric)."""
+"""Lineage-aware phylum..genus relative abundance, percentile-ranked within study (batch harmonization)
++ random forest whose max_features is chosen by out-of-bag within-study AUROC on the training fold."""
 import numpy as np
 import pandas as pd
-from scipy.stats import rankdata
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import GroupKFold, StratifiedKFold
 
-FAM_PREFIX = "FAM::"
+
+def _study_labels(items, ctx):
+    meta = ctx.get("meta") if isinstance(ctx, dict) else None
+    if meta is None or "study" not in getattr(meta, "columns", []):
+        return np.zeros(len(items), dtype=object)
+    if meta.index.isin(items.index).all() and items.index.isin(meta.index).all():
+        return meta.loc[items.index, "study"].astype(str).values
+    if len(meta) == len(items):
+        return meta["study"].astype(str).values
+    return np.zeros(len(items), dtype=object)
+
+
+def _train_studies(F_train, ctx):
+    meta = ctx.get("meta_train") if isinstance(ctx, dict) else None
+    if meta is None or "study" not in getattr(meta, "columns", []):
+        return np.zeros(len(F_train), dtype=object)
+    if F_train.index.isin(meta.index).all():
+        return meta.loc[F_train.index, "study"].astype(str).values
+    if len(meta) == len(F_train):
+        return meta["study"].astype(str).values
+    return np.zeros(len(F_train), dtype=object)
+
+
+def _lineage(col, depth):
+    # Full lineage prefix up to `depth` levels (k,p = 2; c = 3; o = 4; f = 5; g = 6), so that
+    # unannotated levels (e.g. 'g__') stay distinct per parent taxon instead of being lumped together.
+    parts = col.split(";")
+    parts = parts + [""] * max(0, depth - len(parts))
+    return ";".join(parts[:depth])
 
 
 def featurize(items, ctx):
     rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
-    parts = [c.split(";") for c in rel.columns]
-    genus = [p[5] if len(p) > 5 else "g__" for p in parts]
-    family = [FAM_PREFIX + ";".join(p[1:5]) for p in parts]   # full lineage to family level
-    G = rel.T.groupby(np.array(genus)).sum().T               # samples x genera
-    Fm = rel.T.groupby(np.array(family)).sum().T             # samples x families
-    return pd.concat([G, Fm], axis=1)
+    blocks = []
+    for depth in (2, 3, 4, 5, 6):                           # phylum, class, order, family, genus
+        keys = np.array([_lineage(c, depth) for c in rel.columns])
+        blocks.append(rel.T.groupby(keys).sum().T)
+    G = pd.concat(blocks, axis=1)
+    G = G.loc[:, ~G.columns.duplicated()]
+    # Per-study percentile ranks: removes study-specific depth/region scale shifts,
+    # keeps within-study ordering (all zeros within a study share one tied rank).
+    studies = _study_labels(G, ctx)
+    out = pd.DataFrame(0.0, index=G.index, columns=G.columns)
+    for s in pd.unique(studies):
+        m = studies == s
+        out.loc[m] = G.loc[m].rank(axis=0, method="average", pct=True).values
+    return out
 
 
-def _balanced_weights(y, study):
-    """Within each study, cases and controls get equal total weight; each study keeps
-    total weight proportional to its size. Removes the study <-> label confound."""
-    y = np.asarray(y)
-    study = np.asarray(study)
-    w = np.ones(len(y), dtype=float)
-    for s in np.unique(study):
-        ms = study == s
-        n_s = ms.sum()
-        classes = np.unique(y[ms])
-        if len(classes) < 2:
-            # single-class study gives no within-study contrast; down-weight it
-            w[ms] = 0.5
+def _within_study_auc(y, p, studies):
+    aucs, ws = [], []
+    for s in pd.unique(studies):
+        m = (studies == s) & np.isfinite(p)
+        if m.sum() < 4 or len(np.unique(y[m])) < 2:
             continue
-        for c in classes:
-            m = ms & (y == c)
-            w[m] = n_s / (len(classes) * m.sum())
-    return w * len(y) / w.sum()
-
-
-def _clr_centred(Rtr, Rte, st_tr, st_te, min_prev=0.05, eps=1e-5):
-    """CLR on prevalent taxa, then subtract each study's (label-free) mean profile."""
-    keep = (Rtr > 0).mean(axis=0) >= min_prev
-    L = np.log(np.vstack([Rtr[:, keep], Rte[:, keep]]) + eps)
-    L = L - L.mean(axis=1, keepdims=True)
-    st = np.concatenate([st_tr, st_te])
-    for s in np.unique(st):
-        m = st == s
-        L[m] -= L[m].mean(axis=0)
-    mu, sd = L[:len(Rtr)].mean(axis=0), L[:len(Rtr)].std(axis=0) + 1e-6
-    L = (L - mu) / sd
-    return L[:len(Rtr)], L[len(Rtr):]
-
-
-def _within_auc(y, p, study, w=None):
-    """Mean within-study AUROC over studies with both classes."""
-    aucs = []
-    for s in np.unique(study):
-        m = study == s
-        if len(np.unique(y[m])) == 2:
-            aucs.append(roc_auc_score(y[m], p[m]))
-    return np.mean(aucs) if aucs else 0.5
-
-
-def _study_rank(p, study):
-    """Percentile rank of each score within its own study (label-free)."""
-    r = np.zeros(len(p), dtype=float)
-    for s in np.unique(study):
-        m = study == s
-        r[m] = rankdata(p[m]) / m.sum()
-    return r
-
-
-def _fit_lr(Xtr, y, w, study, groups, Xte):
-    Cs = [0.003, 0.01, 0.03, 0.1, 0.3]
-    if groups is not None and len(np.unique(groups)) >= 3:
-        splits = list(GroupKFold(n_splits=3).split(Xtr, y, groups))
-    else:
-        splits = list(StratifiedKFold(3, shuffle=True, random_state=0).split(Xtr, y))
-    best_c, best = Cs[0], -1
-    for C in Cs:
-        oof = np.zeros(len(y))
-        for tr, va in splits:
-            lr = LogisticRegression(C=C, max_iter=2000)
-            lr.fit(Xtr[tr], y[tr], sample_weight=w[tr])
-            oof[va] = lr.decision_function(Xtr[va])
-        sc = _within_auc(y, oof, study)
-        if sc > best:
-            best, best_c = sc, C
-    lr = LogisticRegression(C=best_c, max_iter=2000)
-    lr.fit(Xtr, y, sample_weight=w)
-    return lr.decision_function(Xte)
+        aucs.append(roc_auc_score(y[m], p[m]))
+        ws.append(m.sum())
+    if not aucs:
+        m = np.isfinite(p)
+        return roc_auc_score(y[m], p[m]) if len(np.unique(y[m])) > 1 else 0.5
+    return float(np.average(aucs, weights=ws))
 
 
 def fit_predict(F_train, y_train, F_test, ctx):
     cols = F_train.columns                                  # align test taxa to training taxa
-    is_fam = np.array([str(c).startswith(FAM_PREFIX) for c in cols])
-    Atr = F_train[cols].values
-    Ate = F_test.reindex(columns=cols, fill_value=0).values
-    Xtr, Xte = Atr[:, ~is_fam], Ate[:, ~is_fam]             # genus block
-    Ftr, Fte = Atr[:, is_fam], Ate[:, is_fam]               # family block
-    y = np.asarray(y_train)
-    meta_tr, meta_te = ctx.get("meta_train", None), ctx.get("meta_test", None)
-    if meta_tr is not None and "study" in meta_tr and len(meta_tr) == len(Xtr):
-        st_tr = meta_tr["study"].astype(str).values
-        w = _balanced_weights(y, st_tr)
-    else:
-        st_tr = np.array(["all"] * len(Xtr))
-        w = np.ones(len(y))
-    if meta_te is not None and "study" in meta_te and len(meta_te) == len(Xte):
-        st_te = meta_te["study"].astype(str).values
-    else:
-        st_te = np.array(["all"] * len(Xte))
-
-    rf = RandomForestClassifier(n_estimators=500, random_state=0, n_jobs=-1)
-    rf.fit(Xtr, y, sample_weight=w)
-    p_rf = rf.predict_proba(Xte)[:, 1]
-
-    Gtr, Gte = _clr_centred(Xtr, Xte, st_tr, st_te)
-    if Ftr.shape[1] > 1:
-        Hfr, Hfe = _clr_centred(Ftr, Fte, st_tr, st_te)
-        Ztr, Zte = np.hstack([Gtr, Hfr]), np.hstack([Gte, Hfe])
-    else:
-        Ztr, Zte = Gtr, Gte
-    groups = ctx.get("groups_train", None)
-    if groups is not None and len(groups) != len(y):
-        groups = None
-    p_lr = _fit_lr(Ztr, y, w, st_tr, None if groups is None else np.asarray(groups), Zte)
-
-    return 0.5 * _study_rank(p_rf, st_te) + 0.5 * _study_rank(p_lr, st_te)
+    Xtr, Xte = F_train[cols].values, F_test.reindex(columns=cols, fill_value=0).values
+    y = np.asarray(y_train).astype(int)
+    studies = _train_studies(F_train, ctx)
+    best_rf, best_auc = None, -np.inf
+    for mf in ("sqrt", 0.05, 0.15, 0.3):
+        rf = RandomForestClassifier(n_estimators=500, max_features=mf, oob_score=True,
+                                    random_state=0, n_jobs=-1)
+        rf.fit(Xtr, y)
+        oob = rf.oob_decision_function_[:, 1]
+        auc = _within_study_auc(y, oob, studies)
+        if auc > best_auc + 1e-4:                           # ties keep the simpler/default choice
+            best_rf, best_auc = rf, auc
+    return best_rf.predict_proba(Xte)[:, 1]

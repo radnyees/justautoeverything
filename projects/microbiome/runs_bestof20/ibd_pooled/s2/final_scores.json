@@ -5,20 +5,20 @@
   "run": "s2",
   "subdir": "runs_bestof20",
   "solution": "solution.py",
-  "dev_seed": 0.758316,
-  "dev_champion": 0.789764,
-  "eval_seed": 0.7121698850773186,
-  "eval_champion": 0.7308094470664979,
-  "dev_gain": 0.03144800000000003,
-  "eval_gain": 0.018639561989179265,
+  "dev_seed": 0.756199,
+  "dev_champion": 0.797858,
+  "eval_seed": 0.6842428711897738,
+  "eval_champion": 0.7459644378892166,
+  "dev_gain": 0.041659,
+  "eval_gain": 0.06172156669944284,
   "eval_bootstrap": {
     "n_boot": 2000,
-    "boot_se": 0.029247241348744468,
+    "boot_se": 0.046924476943349475,
     "ci95": [
-      -0.03489870319181401,
-      0.07902120044078724
+      -0.030390881615828,
+      0.15621249402840331
     ],
-    "p_one_sided": 0.25
+    "p_one_sided": 0.1045
   },
   "external": {}
 }

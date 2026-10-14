@@ -1,15 +1,20 @@
-"""Genus-level relative abundance, per-study percentile-rank harmonization, random forest."""
+"""Genus-level relative abundance, harmonized by per-study percentile ranks + random forest."""
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
 
 def _study_labels(items, ctx):
-    meta = ctx.get("meta") if isinstance(ctx, dict) else None
+    meta = ctx.get("meta", None) if isinstance(ctx, dict) else None
     if meta is None or "study" not in getattr(meta, "columns", []):
         return np.zeros(len(items), dtype=object)
-    if meta.index.equals(items.index) or set(items.index).issubset(set(meta.index)):
-        return meta.loc[items.index, "study"].astype(str).values
+    try:
+        if meta.index.isin(items.index).all() or items.index.isin(meta.index).all():
+            s = meta["study"].reindex(items.index)
+            if s.notna().all():
+                return s.astype(str).values
+    except Exception:
+        pass
     if len(meta) == len(items):
         return meta["study"].astype(str).values
     return np.zeros(len(items), dtype=object)
@@ -18,15 +23,16 @@ def _study_labels(items, ctx):
 def featurize(items, ctx):
     rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
     genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
-    G = rel.T.groupby(np.array(genus)).sum().T             # samples x genera
-    studies = _study_labels(items, ctx)
-    out = pd.DataFrame(0.0, index=G.index, columns=G.columns)
-    for s in pd.unique(studies):
-        m = studies == s
-        sub = G.loc[m]
-        # within-study percentile rank (ties averaged; absent genera share the low rank)
-        out.loc[m] = (sub.rank(axis=0, method="average") / max(m.sum(), 1)).values
-    return out
+    G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
+    # per-study percentile ranks (label-free harmonization of depth/protocol shifts)
+    study = _study_labels(G, ctx)
+    out = np.zeros(G.shape, dtype=float)
+    vals = G.values
+    for s in pd.unique(study):
+        m = study == s
+        sub = pd.DataFrame(vals[m])
+        out[m] = sub.rank(axis=0, method="average", pct=True).values
+    return pd.DataFrame(out, index=G.index, columns=G.columns)
 
 
 def fit_predict(F_train, y_train, F_test, ctx):

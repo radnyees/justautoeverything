@@ -1,4 +1,4 @@
-"""Genus-level log relative abundance, z-scored within each study (batch harmonization) + random forest."""
+"""Genus-level relative abundance, per-study percentile-rank harmonization + random forest."""
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -23,16 +23,15 @@ def featurize(items, ctx):
     rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
     genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
     G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
-    L = np.log10(G.values + 1e-5)
+    # per-study percentile ranks: removes study-specific depth/region/protocol shifts
     studies = _study_labels(items, ctx)
-    Z = np.zeros_like(L)
-    for s in pd.unique(studies):
+    out = np.zeros(G.shape, dtype=float)
+    vals = G.values
+    for s in np.unique(studies):
         m = studies == s
-        mu = L[m].mean(axis=0)
-        sd = L[m].std(axis=0)
-        sd = np.where(sd > 1e-8, sd, 1.0)
-        Z[m] = (L[m] - mu) / sd
-    return pd.DataFrame(Z, index=G.index, columns=G.columns)
+        sub = pd.DataFrame(vals[m])
+        out[m] = sub.rank(axis=0, method="average", pct=True).values
+    return pd.DataFrame(out, index=G.index, columns=G.columns)
 
 
 def fit_predict(F_train, y_train, F_test, ctx):

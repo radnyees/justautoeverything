@@ -1,211 +1,251 @@
-"""Lineage-aware multi-level (genus/family/order/class/phylum) relative abundance + alpha-diversity
-+ Gevers microbial dysbiosis index (log-ratio); ensemble of a random forest and an L2
-logistic regression on per-sample, per-level CLR (genus/family/order/class/phylum) abundances plus
-rarefied genus presence/absence, with the linear design centred per study on that study's
-training-fold controls. The two models' scores are rank-averaged WITHIN each test study
-(matching the within-study metric)."""
+"""Multi-level taxonomy CLR (genus + family + phylum) + alpha diversity (Shannon, Simpson,
+rarefied richness) + known IBD marker log-ratios (Gevers dysbiosis index, butyrate producers
+vs Enterobacteriaceae, Proteobacteria vs Firmicutes), z-scored within each study (batch
+harmonization), + rank-averaged ensemble of a tree component (random forest + extremely
+randomized trees) and L2 logistic regression (C tuned by grouped inner CV). Training samples
+are weighted so that every (study, class) cell carries equal total weight (within-study
+balanced learning). Component scores are rank-normalized WITHIN each test study before
+blending, so each model carries its intended weight in every study (the metric is
+within-study AUROC).
+
+CLR pseudocount is fixed per study (0.5 / study median read depth) rather than per sample,
+so a zero maps to the same value for every sample of a study and per-sample sequencing
+depth no longer shifts the CLR geometric mean (and hence every CLR feature). The marker
+log-ratios use the same study-level relative-abundance pseudocount, so an absent marker
+group maps to the same value within a study instead of log(0.5 / sample depth)."""
 import numpy as np
 import pandas as pd
+from scipy.special import gammaln
 from scipy.stats import rankdata
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-
-RARE_DEPTH = 1000
-CLR_PSEUDO = 1e-5          # relative-abundance pseudocount for the CLR transform
-LR_MIN_PREV = 0.05         # taxon prevalence (training fold) required for the linear model
-PA_MAX_PREV = 0.95         # presence features must vary in the training fold
-LR_C = 0.05
-LR_LEVELS = ("G|", "F|", "O|", "CL|", "PH|")   # each level is CLR-transformed as its own composition
-MIN_REF = 5                # minimum reference samples for a per-study control centre
-
-# Gevers et al. 2014 (Cell Host Microbe) microbial dysbiosis index taxa
-MD_UP_FAMILIES = {"Enterobacteriaceae", "Pasteurellaceae", "Fusobacteriaceae",
-                  "Neisseriaceae", "Veillonellaceae", "Gemellaceae"}
-MD_DOWN_ORDERS = {"Bacteroidales", "Clostridiales"}
-MD_DOWN_FAMILIES = {"Erysipelotrichaceae", "Bifidobacteriaceae"}
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
+from sklearn.linear_model import LogisticRegressionCV
+from sklearn.model_selection import GroupKFold, StratifiedKFold
 
 
-def _shannon(p):
-    p = p[p > 0]
-    return float(-(p * np.log(p)).sum()) if p.size else 0.0
+def _study_labels(items, ctx, key="meta"):
+    meta = ctx.get(key, None)
+    if meta is None or "study" not in getattr(meta, "columns", []):
+        return np.zeros(len(items), dtype=object)
+    try:
+        s = meta["study"].reindex(items.index)
+        if s.isna().any():
+            raise KeyError
+        return s.astype(str).values
+    except Exception:
+        if len(meta) == len(items):
+            return meta["study"].astype(str).values
+        return np.zeros(len(items), dtype=object)
 
 
-def _alpha(counts, genus_idx, n_genus, rng):
-    """Alpha-diversity for one sample's raw OTU counts (int vector), plus the rarefied
-    genus presence vector (depth-normalized detection)."""
-    tot = counts.sum()
-    out = {}
-    if tot <= 0:
-        return (dict(div_shannon_otu=0.0, div_simpson_otu=0.0, div_shannon_genus=0.0,
-                     div_rich_otu=0.0, div_rich_genus=0.0, div_log_rich_obs=0.0),
-                np.zeros(n_genus))
-    p = counts / tot
-    out["div_shannon_otu"] = _shannon(p)
-    out["div_simpson_otu"] = float(1.0 - (p ** 2).sum())
-    pg = np.bincount(genus_idx, weights=p, minlength=n_genus)
-    out["div_shannon_genus"] = _shannon(pg)
-    # rarefied richness (depth-normalized); samples below depth keep all reads
-    if tot > RARE_DEPTH:
-        sub = rng.multivariate_hypergeometric(counts.astype(np.int64), RARE_DEPTH)
-    else:
-        sub = counts
-    present = sub > 0
-    out["div_rich_otu"] = float(present.sum())
-    out["div_rich_genus"] = float(np.unique(genus_idx[present]).size)
-    out["div_log_rich_obs"] = float(np.log1p((counts > 0).sum()))
-    pres_genus = (np.bincount(genus_idx, weights=sub.astype(float), minlength=n_genus) > 0)
-    return out, pres_genus.astype(float)
+def _shannon(mat):
+    tot = mat.sum(axis=1, keepdims=True)
+    p = mat / np.clip(tot, 1e-12, None)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        h = -np.where(p > 0, p * np.log(p), 0.0).sum(axis=1)
+    return h, p
 
 
-def _level(col, prefix):
-    for part in col.split(";"):
-        part = part.strip()
-        if part.startswith(prefix):
-            return part[len(prefix):]
-    return ""
+def _expected_richness(counts_row, D):
+    """Expected number of OTUs observed when rarefying a sample to depth D (analytical)."""
+    n = counts_row[counts_row > 0]
+    N = n.sum()
+    if N <= D or D <= 0:
+        return float(len(n))
+    logC_N = gammaln(N + 1) - gammaln(D + 1) - gammaln(N - D + 1)
+    rem = N - n
+    absent = np.zeros_like(n, dtype=float)
+    ok = rem >= D
+    r = rem[ok]
+    absent[ok] = np.exp(gammaln(r + 1) - gammaln(D + 1) - gammaln(r - D + 1) - logC_N)
+    return float((1.0 - absent).sum())
 
 
-def _lineage(col, depth):
-    """Lineage key truncated to the first `depth` ranks (k,p,c,o,f,g -> depth 6)."""
-    parts = [p.strip() for p in col.split(";")]
-    parts = (parts + [""] * depth)[:depth]
-    return ";".join(parts)
+def _zscore_by_study(X, studies):
+    Z = np.zeros_like(X, dtype=float)
+    for s in pd.unique(studies):
+        m = studies == s
+        mu = X[m].mean(axis=0)
+        sd = X[m].std(axis=0)
+        sd = np.where(sd < 1e-8, 1.0, sd)
+        Z[m] = (X[m] - mu) / sd
+    return Z
 
 
-def _md_index(items):
-    """Gevers dysbiosis index: log(sum up-taxa / sum down-taxa), pseudocount 0.5 read."""
-    cols = list(items.columns)
-    fam = np.array([_level(c, "f__") for c in cols])
-    order = np.array([_level(c, "o__") for c in cols])
-    up = np.isin(fam, list(MD_UP_FAMILIES))
-    down = (np.isin(order, list(MD_DOWN_ORDERS)) | np.isin(fam, list(MD_DOWN_FAMILIES))) & ~up
-    X = items.values.astype(float)
-    depth = X.sum(axis=1).clip(min=1)
-    eps = 0.5 / depth
-    up_rel = X[:, up].sum(axis=1) / depth
-    down_rel = X[:, down].sum(axis=1) / depth
-    return pd.DataFrame({
-        "md_index": np.log(up_rel + eps) - np.log(down_rel + eps),
-        "md_log_up": np.log(up_rel + eps),
-        "md_log_down": np.log(down_rel + eps),
-    }, index=items.index)
+def _study_pseudocount(depth, studies):
+    """Per-sample relative-abundance pseudocount, constant within study:
+    half a read at the study's median sequencing depth."""
+    pc = np.zeros(len(depth))
+    for s in pd.unique(studies):
+        m = studies == s
+        med = float(np.median(depth[m]))
+        pc[m] = 0.5 / max(med, 1.0)
+    return pc[:, None]
+
+
+def _level_clr(counts, level, pc, min_prev=0.02):
+    """Aggregate counts to a taxonomy level (lineage prefix up to `level`), filter by
+    prevalence, CLR with a study-level pseudocount."""
+    lab = []
+    for c in counts.columns:
+        parts = c.split(";")
+        lab.append(";".join(parts[: level + 1]) if len(parts) > level else c)
+    g = counts.T.groupby(np.array(lab)).sum().T
+    keep = (g > 0).mean(axis=0) >= min_prev
+    g = g.loc[:, keep]
+    rv = g.div(g.sum(axis=1).clip(lower=1), axis=0).values
+    logx = np.log(rv + pc)
+    clr = logx - logx.mean(axis=1, keepdims=True)
+    names = [f"L{level}|{n}" for n in g.columns]
+    return clr, names
+
+
+def _marker_sum(counts_vals, cols_lower, tokens):
+    """Total reads of OTUs whose lineage contains any of the given taxon tokens."""
+    mask = np.array([any(t in c for t in tokens) for c in cols_lower])
+    if not mask.any():
+        return np.zeros(counts_vals.shape[0])
+    return counts_vals[:, mask].sum(axis=1)
+
+
+def _marker_features(counts, pc):
+    """Known IBD dysbiosis log-ratios (label-free, literature-defined), computed on
+    relative abundances with a study-level pseudocount `pc` (n x 1)."""
+    C = counts.values
+    cols_lower = [c.lower() for c in counts.columns]
+    depth = np.clip(C.sum(axis=1), 1, None)
+    pcv = pc.ravel()
+
+    def rel(tokens):
+        return _marker_sum(C, cols_lower, tokens) / depth
+
+    # Gevers et al. 2014 microbial dysbiosis index
+    up = rel(["f__enterobacteriaceae", "f__pasteurellaceae",
+              "f__veillonellaceae", "f__fusobacteriaceae"])
+    down = rel(["o__erysipelotrichales", "o__bacteroidales", "o__clostridiales"])
+    md_index = np.log(up + pcv) - np.log(down + pcv)
+
+    # butyrate producers vs Enterobacteriaceae
+    buty = rel(["g__faecalibacterium", "g__roseburia", "g__coprococcus", "g__eubacterium",
+                "g__subdoligranulum", "g__anaerostipes"])
+    entero = rel(["f__enterobacteriaceae"])
+    buty_ratio = np.log(buty + pcv) - np.log(entero + pcv)
+
+    # Proteobacteria vs Firmicutes
+    prot = rel(["p__proteobacteria"])
+    firm = rel(["p__firmicutes"])
+    pf_ratio = np.log(prot + pcv) - np.log(firm + pcv)
+
+    # relative abundance of butyrate producers (log)
+    buty_rel = np.log(buty + pcv)
+
+    F = np.column_stack([md_index, buty_ratio, pf_ratio, buty_rel])
+    names = ["mk_dysbiosis_index", "mk_butyrate_vs_entero", "mk_proteo_vs_firmicutes",
+             "mk_log_butyrate_rel"]
+    return F, names
 
 
 def featurize(items, ctx):
-    rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
-    cols = list(rel.columns)
-    # lineage-aware keys: an unclassified genus stays attached to its family/order
-    genus = np.array(["G|" + _lineage(c, 6) for c in cols])
-    family = np.array(["F|" + _lineage(c, 5) for c in cols])
-    order = np.array(["O|" + _lineage(c, 4) for c in cols])
-    klass = np.array(["CL|" + _lineage(c, 3) for c in cols])
-    phylum = np.array(["PH|" + _lineage(c, 2) for c in cols])
-    relT = rel.T
-    G = relT.groupby(genus).sum().T                         # samples x genera
-    Fm = relT.groupby(family).sum().T                       # samples x families
-    O = relT.groupby(order).sum().T                         # samples x orders
-    Cl = relT.groupby(klass).sum().T                        # samples x classes
-    Ph = relT.groupby(phylum).sum().T                       # samples x phyla
+    counts = items.astype(float)
+    studies = _study_labels(items, ctx)
+    total_depth = counts.values.sum(axis=1)
+    pc = _study_pseudocount(total_depth, studies)
 
-    genus_names, genus_idx = np.unique(genus, return_inverse=True)
-    n_genus = int(genus_idx.max()) + 1 if genus_idx.size else 1
-    rng = np.random.default_rng(0)
-    C = np.rint(items.values).astype(np.int64)
-    C[C < 0] = 0
-    rows, pres = [], []
-    for i in range(C.shape[0]):
-        d, pr = _alpha(C[i], genus_idx, n_genus, rng)
-        rows.append(d)
-        pres.append(pr)
-    D = pd.DataFrame(rows, index=items.index)
-    P = pd.DataFrame(np.vstack(pres) if pres else np.zeros((0, n_genus)), index=items.index,
-                     columns=["P|" + str(g)[2:] for g in genus_names[:n_genus]])
-    M = _md_index(items)
-    return pd.concat([G, Fm, O, Cl, Ph, D, M, P], axis=1)
+    # genus-level (genus name only)
+    genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in counts.columns]
+    g = counts.T.groupby(np.array(genus)).sum().T              # samples x genera (counts)
+    rel = g.div(g.sum(axis=1).clip(lower=1), axis=0)
+    keep = (g > 0).mean(axis=0) >= 0.02
+    g_f, rel_f = g.loc[:, keep], rel.loc[:, keep]
+    rv = rel_f.values
+    logx = np.log(rv + pc)
+    clr = logx - logx.mean(axis=1, keepdims=True)
 
+    # coarser taxonomy levels: family (index 4) and phylum (index 1)
+    clr_fam, fam_names = _level_clr(counts, 4, pc)
+    clr_phy, phy_names = _level_clr(counts, 1, pc)
 
-def _clr_block(F, tcols):
-    B = np.log(F.reindex(columns=tcols, fill_value=0).values.astype(float) + CLR_PSEUDO)
-    return B - B.mean(axis=1, keepdims=True)
+    # alpha diversity (OTU-level and genus-level)
+    C = np.round(counts.values)
+    h_otu, p_otu = _shannon(C)
+    inv_simpson = 1.0 / np.clip((p_otu ** 2).sum(axis=1), 1e-12, None)
+    h_gen, _ = _shannon(g.values)
+    depth = C.sum(axis=1)
+    rich = np.zeros(len(C))
+    for s in pd.unique(studies):
+        m = np.where(studies == s)[0]
+        D = float(max(np.floor(np.quantile(depth[m], 0.1)), 100.0))
+        for i in m:
+            rich[i] = _expected_richness(C[i], D)
+    div = np.column_stack([h_otu, np.log(inv_simpson), h_gen, np.log1p(rich)])
+    div_names = ["alpha_shannon_otu", "alpha_log_invsimpson", "alpha_shannon_genus",
+                 "alpha_log_rarefied_richness"]
 
+    # known IBD marker log-ratios (study-level pseudocount)
+    mk, mk_names = _marker_features(counts, pc)
 
-def _linear_design(F, level_cols, ecols, pcols):
-    """Per-sample CLR within each taxonomic level + engineered (diversity / MDI) features
-    + rarefied genus presence/absence."""
-    blocks = [_clr_block(F, tcols) for tcols in level_cols if len(tcols) > 1]
-    blocks.append(F.reindex(columns=ecols, fill_value=0).values.astype(float))
-    if pcols:
-        blocks.append(F.reindex(columns=pcols, fill_value=0).values.astype(float))
-    return np.hstack(blocks)
+    X = np.hstack([clr, clr_fam, clr_phy, div, mk])
+    Z = _zscore_by_study(X, studies)
+    cols = list(g_f.columns) + fam_names + phy_names + div_names + mk_names
+    return pd.DataFrame(Z, index=items.index, columns=cols)
 
 
-def _study(ctx, key, n):
-    meta = ctx.get(key) if isinstance(ctx, dict) else None
-    if meta is None or "study" not in getattr(meta, "columns", []) or len(meta) != n:
-        return np.zeros(n, dtype=object)
-    return np.asarray(meta["study"]).astype(str)
+def _inner_cv(y, groups, n_splits=5):
+    if groups is not None and len(pd.unique(groups)) >= n_splits:
+        return list(GroupKFold(n_splits=n_splits).split(np.zeros(len(y)), y, groups))
+    return list(StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=0)
+                .split(np.zeros(len(y)), y))
 
 
-def _control_centre(Ltr, Lte, y, s_tr, s_te):
-    """Subtract, per study, the mean of that study's training-fold controls (harmonization:
-    removes study offsets while preserving each study's case-vs-control shift)."""
-    glob_ref = Ltr[y == 0] if (y == 0).sum() >= MIN_REF else Ltr
-    glob_mu = glob_ref.mean(axis=0)
-    Ltr, Lte = Ltr.copy(), Lte.copy()
-    for s in np.unique(np.concatenate([s_tr, s_te])):
-        in_tr = s_tr == s
-        ref = Ltr[in_tr & (y == 0)]
-        if ref.shape[0] < MIN_REF:
-            ref = Ltr[in_tr]
-        mu = ref.mean(axis=0) if ref.shape[0] >= MIN_REF else glob_mu
-        Ltr[in_tr] -= mu
-        Lte[s_te == s] -= mu
-    return Ltr, Lte
-
-
-def _within_group_rank(score, groups):
-    """Rank scores within each group, scaled to (0, 1]."""
-    out = np.empty(len(score), dtype=float)
-    for g in np.unique(groups):
-        m = groups == g
-        out[m] = rankdata(score[m]) / m.sum()
+def _norm_rank(v, studies=None):
+    """Normalized ranks in (0, 1); computed within each study when studies are given."""
+    v = np.asarray(v, dtype=float)
+    if studies is None:
+        return (rankdata(v) - 0.5) / len(v)
+    out = np.zeros(len(v))
+    for s in pd.unique(studies):
+        m = studies == s
+        out[m] = (rankdata(v[m]) - 0.5) / m.sum()
     return out
 
 
+def _study_class_weights(studies, y):
+    """Equal total weight per (study, class) cell; normalized to mean 1."""
+    keys = pd.Series([f"{s}|{c}" for s, c in zip(studies, y)])
+    counts = keys.map(keys.value_counts()).values.astype(float)
+    w = 1.0 / counts
+    return w * (len(w) / w.sum())
+
+
 def fit_predict(F_train, y_train, F_test, ctx):
-    y = np.asarray(y_train)
     cols = F_train.columns
-    # random forest: abundances at all levels, diversity, MDI; no presence block
-    rf_cols = [c for c in cols if not str(c).startswith("P|")]
-    Xtr = F_train[rf_cols].values
-    Xte = F_test.reindex(columns=rf_cols, fill_value=0).values
-    rf = RandomForestClassifier(n_estimators=500, random_state=0, n_jobs=-1)
-    rf.fit(Xtr, y)
+    Xtr = F_train[cols].values
+    Xte = F_test.reindex(columns=cols, fill_value=0).values
+    y = np.asarray(y_train)
+
+    studies_tr = _study_labels(F_train, ctx, key="meta_train")
+    studies_te = _study_labels(F_test, ctx, key="meta_test")
+    sw = _study_class_weights(studies_tr, y)
+
+    rf = RandomForestClassifier(n_estimators=1000, max_features="sqrt", min_samples_leaf=2,
+                                random_state=0, n_jobs=-1)
+    rf.fit(Xtr, y, sample_weight=sw)
     p_rf = rf.predict_proba(Xte)[:, 1]
 
-    # linear model on compositional (CLR) profiles at each level; prevalence fitted
-    # on the training fold
-    level_cols = []
-    for pref in LR_LEVELS:
-        tcols = [c for c in cols if str(c).startswith(pref)]
-        if not tcols:
-            continue
-        prev = (F_train[tcols].values > 0).mean(axis=0)
-        level_cols.append([c for c, p in zip(tcols, prev) if p >= LR_MIN_PREV])
-    ecols = [c for c in cols if str(c).startswith(("div_", "md_"))]
-    pall = [c for c in cols if str(c).startswith("P|")]
-    pprev = F_train[pall].values.mean(axis=0) if pall else np.array([])
-    pcols = [c for c, p in zip(pall, pprev) if LR_MIN_PREV <= p <= PA_MAX_PREV]
-    Ltr = _linear_design(F_train, level_cols, ecols, pcols)
-    Lte = _linear_design(F_test, level_cols, ecols, pcols)
-    s_tr = _study(ctx, "meta_train", Ltr.shape[0])
-    s_te = _study(ctx, "meta_test", Lte.shape[0])
-    Ltr, Lte = _control_centre(Ltr, Lte, y, s_tr, s_te)
-    sc = StandardScaler().fit(Ltr)
-    lr = LogisticRegression(C=LR_C, penalty="l2", max_iter=5000)
-    lr.fit(sc.transform(Ltr), y)
-    s_lr = lr.decision_function(sc.transform(Lte))
+    # extremely randomized trees: random thresholds -> less reliance on study-specific
+    # exact cut-points, smoother partial dependence on noisy compositional features
+    et = ExtraTreesClassifier(n_estimators=1000, max_features="sqrt", min_samples_leaf=3,
+                              random_state=0, n_jobs=-1)
+    et.fit(Xtr, y, sample_weight=sw)
+    p_et = et.predict_proba(Xte)[:, 1]
 
-    # rank-average within each test study so both models carry equal weight in every study
-    return 0.5 * (_within_group_rank(p_rf, s_te) + _within_group_rank(s_lr, s_te))
+    p_tree = 0.5 * _norm_rank(p_rf, studies_te) + 0.5 * _norm_rank(p_et, studies_te)
+
+    groups = ctx.get("groups_train", None)
+    groups = np.asarray(groups) if groups is not None else None
+    lr = LogisticRegressionCV(Cs=np.logspace(-3.5, -0.5, 7), penalty="l2",
+                              cv=_inner_cv(y, groups), scoring="roc_auc",
+                              solver="lbfgs", max_iter=3000, n_jobs=-1)
+    lr.fit(Xtr, y, sample_weight=sw)
+    p_lr = lr.predict_proba(Xte)[:, 1]
+
+    return 0.5 * _norm_rank(p_tree, studies_te) + 0.5 * _norm_rank(p_lr, studies_te)

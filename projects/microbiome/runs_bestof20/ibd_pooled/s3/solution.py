@@ -1,5 +1,4 @@
-"""Genus-level log relative abundance, standardized within each study (label-free batch
-harmonization), + random forest."""
+"""Genus-level relative abundance, harmonized by within-study percentile ranks + random forest."""
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -9,30 +8,28 @@ def _study_labels(items, ctx):
     meta = ctx.get("meta") if isinstance(ctx, dict) else None
     if meta is None or "study" not in getattr(meta, "columns", []):
         return np.zeros(len(items), dtype=object)
-    try:
-        st = meta.loc[items.index, "study"].values
-    except Exception:
-        st = meta["study"].values
-        if len(st) != len(items):
-            return np.zeros(len(items), dtype=object)
-    return np.asarray(st, dtype=object)
+    if meta.index.equals(items.index):
+        return meta["study"].values
+    if items.index.isin(meta.index).all():
+        return meta.loc[items.index, "study"].values
+    if len(meta) == len(items):
+        return meta["study"].values
+    return np.zeros(len(items), dtype=object)
 
 
 def featurize(items, ctx):
     rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
     genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
     G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
-    L = np.log10(G.values + 1e-5)                           # log rel. abundance, floor ~ 1 read/100k
-    studies = _study_labels(items, ctx)
-    Z = np.zeros_like(L)
-    for s in pd.unique(studies):
-        m = studies == s
-        sub = L[m]
-        mu = sub.mean(axis=0)
-        sd = sub.std(axis=0)
-        sd = np.where(sd < 1e-6, 1.0, sd)
-        Z[m] = (sub - mu) / sd                              # within-study standardization
-    return pd.DataFrame(Z, index=items.index, columns=G.columns)
+    # Label-free per-study harmonization: percentile rank of each genus within its study
+    study = pd.Series(_study_labels(G, ctx), index=G.index).astype(str)
+    R = G.groupby(study.values, group_keys=False).apply(
+        lambda d: d.rank(axis=0, method="average", pct=True))
+    R = R.loc[G.index]
+    # genera absent in a whole study get a neutral constant (rank of ties = 1.0); set to 0 instead
+    zero = G.groupby(study.values).transform(lambda s: float((s > 0).any()))
+    R = R * zero.loc[G.index].values
+    return R
 
 
 def fit_predict(F_train, y_train, F_test, ctx):

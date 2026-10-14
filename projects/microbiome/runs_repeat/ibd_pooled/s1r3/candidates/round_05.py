@@ -1,76 +1,74 @@
-"""Genus-level relative abundance + random forest, with study x class balanced sample weights
-so that study identity (confounded with case/control ratio) carries no label information.
-Genera are prevalence-filtered (label-free): kept if present in >=10% of samples of at least
-one study, removing sparse noise genera that dilute the forest's candidate splits."""
+"""Lineage-aware family+genus relative abundance, percentile-ranked within study (batch harmonization);
+rank-averaged ensemble of random forest + inner-CV-tuned L2 logistic regression."""
 import numpy as np
 import pandas as pd
+from scipy.stats import rankdata
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegressionCV
+from sklearn.model_selection import GroupKFold, StratifiedKFold
+from sklearn.preprocessing import StandardScaler
 
-MIN_PREV = 0.10
 
-
-def _study_vector(items, ctx):
-    meta = ctx.get("meta", None)
-    if meta is None or "study" not in meta:
+def _study_labels(items, ctx):
+    meta = ctx.get("meta") if isinstance(ctx, dict) else None
+    if meta is None or "study" not in getattr(meta, "columns", []):
         return np.zeros(len(items), dtype=object)
-    try:
-        s = meta["study"].reindex(items.index)
-        if s.isna().any():
-            raise KeyError
-        return s.astype(str).values
-    except Exception:
-        if len(meta) == len(items):
-            return meta["study"].astype(str).values
-        return np.zeros(len(items), dtype=object)
+    if meta.index.isin(items.index).all() and items.index.isin(meta.index).all():
+        return meta.loc[items.index, "study"].astype(str).values
+    if len(meta) == len(items):
+        return meta["study"].astype(str).values
+    return np.zeros(len(items), dtype=object)
+
+
+def _lineage(col, depth):
+    # Full lineage prefix up to `depth` levels (k,p,c,o,f = 5; +g = 6), so that
+    # unannotated genera ('g__') stay distinct per family instead of being lumped together.
+    parts = col.split(";")
+    parts = parts + [""] * max(0, depth - len(parts))
+    return ";".join(parts[:depth])
 
 
 def featurize(items, ctx):
     rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
-    genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
-    G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
+    blocks = []
+    for depth in (5, 6):                                    # family, genus
+        keys = np.array([_lineage(c, depth) for c in rel.columns])
+        blocks.append(rel.T.groupby(keys).sum().T)
+    G = pd.concat(blocks, axis=1)
+    G = G.loc[:, ~G.columns.duplicated()]
+    # Per-study percentile ranks: removes study-specific depth/region scale shifts,
+    # keeps within-study ordering (all zeros within a study share one tied rank).
+    studies = _study_labels(G, ctx)
+    out = pd.DataFrame(0.0, index=G.index, columns=G.columns)
+    for s in pd.unique(studies):
+        m = studies == s
+        out.loc[m] = G.loc[m].rank(axis=0, method="average", pct=True).values
+    return out
 
-    # label-free prevalence filter: keep genera prevalent in at least one study
-    study = _study_vector(items, ctx)
-    present = (G.values > 0)
-    keep = np.zeros(G.shape[1], dtype=bool)
-    for s in np.unique(study):
-        ms = study == s
-        if ms.sum() == 0:
-            continue
-        keep |= present[ms].mean(axis=0) >= MIN_PREV
-    if keep.sum() < 10:                                     # safety fallback
-        keep = present.mean(axis=0) > 0
-    return G.loc[:, keep]
 
-
-def _balanced_weights(y, study):
-    """Within each study, cases and controls get equal total weight; each study keeps
-    total weight proportional to its size. Removes the study <-> label confound."""
-    y = np.asarray(y)
-    study = np.asarray(study)
-    w = np.ones(len(y), dtype=float)
-    for s in np.unique(study):
-        ms = study == s
-        n_s = ms.sum()
-        classes = np.unique(y[ms])
-        if len(classes) < 2:
-            # single-class study gives no within-study contrast; down-weight it
-            w[ms] = 0.5
-            continue
-        for c in classes:
-            m = ms & (y == c)
-            w[m] = n_s / (len(classes) * m.sum())
-    return w * len(y) / w.sum()
+def _inner_splits(y, groups, n=5):
+    if groups is not None and len(np.unique(groups)) >= n:
+        return list(GroupKFold(n_splits=n).split(np.zeros(len(y)), y, groups))
+    return list(StratifiedKFold(n_splits=n, shuffle=True, random_state=0).split(np.zeros(len(y)), y))
 
 
 def fit_predict(F_train, y_train, F_test, ctx):
-    cols = F_train.columns                                  # align test genera to training genera
+    cols = F_train.columns                                  # align test taxa to training taxa
     Xtr, Xte = F_train[cols].values, F_test.reindex(columns=cols, fill_value=0).values
-    meta_tr = ctx.get("meta_train", None)
-    if meta_tr is not None and "study" in meta_tr and len(meta_tr) == len(Xtr):
-        w = _balanced_weights(y_train, meta_tr["study"].astype(str).values)
-    else:
-        w = None
+    y = np.asarray(y_train)
+
     rf = RandomForestClassifier(n_estimators=500, random_state=0, n_jobs=-1)
-    rf.fit(Xtr, np.asarray(y_train), sample_weight=w)
-    return rf.predict_proba(Xte)[:, 1]
+    rf.fit(Xtr, y)
+    p_rf = rf.predict_proba(Xte)[:, 1]
+
+    # Linear model: additive, monotone taxon shifts (e.g. Faecalibacterium loss, Enterobacteriaceae gain).
+    sc = StandardScaler().fit(Xtr)
+    groups = ctx.get("groups_train") if isinstance(ctx, dict) else None
+    groups = np.asarray(groups) if groups is not None else None
+    lr = LogisticRegressionCV(Cs=np.logspace(-4, 0, 9), cv=_inner_splits(y, groups),
+                              penalty="l2", scoring="roc_auc", max_iter=5000, n_jobs=-1)
+    lr.fit(sc.transform(Xtr), y)
+    p_lr = lr.predict_proba(sc.transform(Xte))[:, 1]
+
+    # Rank-average (scale-free combination of the two models).
+    return (rankdata(p_rf) + rankdata(p_lr)) / (2.0 * len(p_rf))

@@ -1,201 +1,209 @@
-"""Genus-level relative abundance + random forest (study x class balanced weights, min leaf size 3),
-rank-averaged with an L2 logistic regression on per-study-centred CLR features at genus, family,
-order, class and phylum level plus per-study-centred alpha-diversity (Shannon / Renyi-2 entropy).
-The RF/LR blend weight is tuned by within-study AUROC of out-of-fold predictions on grouped
-inner CV of the training fold."""
+"""Lineage-aware phylum..genus robust-CLR, percentile-ranked within study + label-free multi-resolution
+co-abundance modules of genera (one dendrogram cut at several heights; mean member rank, re-ranked
+within study) + within-study dysbiosis distances (median L1 distance on ranks, and median Bray-Curtis
+distance on relative abundance, to training controls / cases of the same study) + random forest."""
+import warnings
 import numpy as np
 import pandas as pd
-from scipy.stats import rankdata
+from scipy.cluster.hierarchy import linkage, fcluster
+from scipy.spatial.distance import cdist, squareform
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import GroupKFold, StratifiedKFold
 
-FAM_PREFIX = "FAM::"
-DIV_PREFIX = "DIV::"
-# higher taxonomic levels (lineage depth into the RDP string) used only by the linear model
-HIGHER_LEVELS = {"ORD::": 4, "CLS::": 3, "PHY::": 2}
-LR_PREFIXES = [FAM_PREFIX] + list(HIGHER_LEVELS)
-# candidate RF weights in the rank blend, ordered so ties keep the 50/50 default
-BLEND_ALPHAS = [0.5, 0.375, 0.625, 0.25, 0.75]
-BLEND_MIN_GAIN = 0.002
+RA_PREFIX = "RA|"
+MOD_PREFIX = "MOD|"
+MOD_CUTS = (0.4, 0.6, 0.8)                                  # tight sub-guilds, guilds, broad consortia
 
 
-def _entropies(P):
-    P = np.asarray(P, dtype=float)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        lp = np.where(P > 0, np.log(np.where(P > 0, P, 1.0)), 0.0)
-    shannon = -(P * lp).sum(axis=1)
-    renyi2 = -np.log(np.clip((P ** 2).sum(axis=1), 1e-12, None))
-    return shannon, renyi2
+def _study_labels(items, ctx):
+    meta = ctx.get("meta") if isinstance(ctx, dict) else None
+    return _study_from_meta(items, meta)
+
+
+def _study_from_meta(items, meta):
+    if meta is None or "study" not in getattr(meta, "columns", []):
+        return np.zeros(len(items), dtype=object).astype(str)
+    if meta.index.isin(items.index).all() and items.index.isin(meta.index).all():
+        return meta.loc[items.index, "study"].astype(str).values
+    if items.index.isin(meta.index).all():
+        return meta.loc[items.index, "study"].astype(str).values
+    if len(meta) == len(items):
+        return meta["study"].astype(str).values
+    return np.zeros(len(items), dtype=object).astype(str)
+
+
+def _lineage(col, depth):
+    # Full lineage prefix up to `depth` levels (k,p = 2; c = 3; o = 4; f = 5; g = 6), so that
+    # unannotated levels (e.g. 'g__') stay distinct per parent taxon instead of being lumped together.
+    parts = col.split(";")
+    parts = parts + [""] * max(0, depth - len(parts))
+    return ";".join(parts[:depth])
+
+
+def _robust_clr(C):
+    # rCLR: log(count) minus the mean log over the sample's non-zero taxa at this level.
+    # No pseudocount (depth-independent); zeros become one tied minimum value.
+    X = C.values.astype(float)
+    nz = X > 0
+    L = np.where(nz, np.log(np.where(nz, X, 1.0)), 0.0)
+    n = nz.sum(axis=1)
+    gm = np.where(n > 0, L.sum(axis=1) / np.maximum(n, 1), 0.0)
+    R = np.where(nz, L - gm[:, None], -1e6)
+    return pd.DataFrame(R, index=C.index, columns=C.columns)
+
+
+def _rank_within_study(G, studies):
+    out = pd.DataFrame(0.0, index=G.index, columns=G.columns)
+    for s in pd.unique(studies):
+        m = studies == s
+        out.loc[m] = G.loc[m].rank(axis=0, method="average", pct=True).values
+    return out
+
+
+def _coabundance_modules(R, studies, min_size=3, cuts=MOD_CUTS):
+    # Label-free co-abundance groups: average-linkage clustering of genera on 1 - correlation of
+    # within-study-centred ranks (i.e. pooled within-study Spearman); module = mean member rank.
+    # The dendrogram is cut at several heights (multi-resolution guilds); duplicate member sets dropped.
+    Z = R.values.astype(float).copy()
+    for s in pd.unique(studies):
+        m = studies == s
+        Z[m] -= Z[m].mean(axis=0)
+    ok = Z.std(axis=0) > 1e-9
+    Z, names = Z[:, ok], R.columns[ok]
+    if Z.shape[1] < min_size:
+        return pd.DataFrame(index=R.index)
+    Cr = np.corrcoef(Z.T)
+    D = np.clip(1.0 - Cr, 0.0, 2.0)
+    D = (D + D.T) / 2.0
+    np.fill_diagonal(D, 0.0)
+    Lk = linkage(squareform(D, checks=False), method="average")
+    feats, seen = {}, set()
+    for cut in cuts:
+        lab = fcluster(Lk, t=cut, criterion="distance")
+        for k in np.unique(lab):
+            mem = names[lab == k]
+            key = frozenset(mem)
+            if len(mem) >= min_size and len(mem) < len(names) and key not in seen:
+                seen.add(key)
+                feats[f"{MOD_PREFIX}{cut}|{k}"] = R[mem].mean(axis=1).values
+    if not feats:
+        return pd.DataFrame(index=R.index)
+    return _rank_within_study(pd.DataFrame(feats, index=R.index), studies)
 
 
 def featurize(items, ctx):
-    rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
-    parts = [c.split(";") for c in rel.columns]
-    genus = [p[5] if len(p) > 5 else "g__" for p in parts]
-    family = [FAM_PREFIX + ";".join(p[1:5]) for p in parts]   # full lineage to family level
-    G = rel.T.groupby(np.array(genus)).sum().T               # samples x genera
-    Fm = rel.T.groupby(np.array(family)).sum().T             # samples x families
-    higher = []
-    for pref, depth in HIGHER_LEVELS.items():                # full lineage to order/class/phylum
-        lab = [pref + ";".join(p[1:depth]) for p in parts]
-        higher.append(rel.T.groupby(np.array(lab)).sum().T)
-    sh_otu, r2_otu = _entropies(rel.values)
-    sh_gen, _ = _entropies(G.values)
-    D = pd.DataFrame({DIV_PREFIX + "shannon_lineage": sh_otu,
-                      DIV_PREFIX + "renyi2_lineage": r2_otu,
-                      DIV_PREFIX + "shannon_genus": sh_gen}, index=rel.index)
-    return pd.concat([G, Fm] + higher + [D], axis=1)
+    blocks, ra_blocks = [], []
+    Cg = None
+    for depth in (2, 3, 4, 5, 6):                           # phylum, class, order, family, genus
+        keys = np.array([_lineage(c, depth) for c in items.columns])
+        C = items.T.groupby(keys).sum().T
+        blocks.append(_robust_clr(C))
+        if depth == 6:
+            Cg = C
+        if depth in (5, 6):
+            # Relative abundance (used only for Bray-Curtis dysbiosis distances, not as RF features).
+            tot = C.sum(axis=1).values.astype(float)
+            RA = C.values.astype(float) / np.where(tot > 0, tot, 1.0)[:, None]
+            ra_blocks.append(pd.DataFrame(RA, index=C.index,
+                                          columns=[f"{RA_PREFIX}{depth}|{c}" for c in C.columns]))
+    G = pd.concat(blocks, axis=1)
+    G = G.loc[:, ~G.columns.duplicated()]
+    # Per-study percentile ranks: removes study-specific depth/region scale shifts,
+    # keeps within-study ordering (all zeros within a study share one tied rank).
+    studies = _study_labels(G, ctx)
+    out = _rank_within_study(G, studies)
+
+    # Co-abundance modules over prevalent genera (label-free).
+    prev = (Cg > 0).mean(axis=0)
+    gcols = [c for c in out.columns if c.count(";") == 5 and prev.get(c, 0.0) >= 0.05]
+    mods = _coabundance_modules(out[gcols], studies) if len(gcols) >= 3 else pd.DataFrame(index=out.index)
+    return pd.concat([out, mods] + ra_blocks, axis=1)
 
 
-def _balanced_weights(y, study):
-    """Within each study, cases and controls get equal total weight; each study keeps
-    total weight proportional to its size. Removes the study <-> label confound."""
-    y = np.asarray(y)
-    study = np.asarray(study)
-    w = np.ones(len(y), dtype=float)
-    for s in np.unique(study):
-        ms = study == s
-        n_s = ms.sum()
-        classes = np.unique(y[ms])
-        if len(classes) < 2:
-            # single-class study gives no within-study contrast; down-weight it
-            w[ms] = 0.5
+def _median_rows(D):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        med = np.nanmedian(D, axis=1)
+    if np.isnan(med).any():
+        fill = np.nanmedian(med) if np.isfinite(med).any() else 0.0
+        med = np.where(np.isnan(med), fill, med)
+    return med
+
+
+def _dist(A, B, metric):
+    with np.errstate(divide="ignore", invalid="ignore"):
+        D = cdist(A, B, metric)
+    if metric == "cityblock":
+        D = D / max(A.shape[1], 1)
+    return D
+
+
+def _dysbiosis_features(blocks, y, groups, s_tr, s_te):
+    # For each (A_tr, A_te, metric) block: median distance to same-study training controls and
+    # cases. Training rows exclude themselves and other samples of the same subject.
+    classes = np.unique(y)
+    pos = classes[-1]
+    ftr, fte = [], []
+    for A_tr, A_te, metric in blocks:
+        if A_tr.shape[1] == 0:
             continue
-        for c in classes:
-            m = ms & (y == c)
-            w[m] = n_s / (len(classes) * m.sum())
-    return w * len(y) / w.sum()
-
-
-def _clr_centred(Rtr, Rte, st_tr, st_te, min_prev=0.05, eps=1e-5):
-    """CLR on prevalent taxa, then subtract each study's (label-free) mean profile."""
-    keep = (Rtr > 0).mean(axis=0) >= min_prev
-    L = np.log(np.vstack([Rtr[:, keep], Rte[:, keep]]) + eps)
-    L = L - L.mean(axis=1, keepdims=True)
-    return _study_centre_scale(L, len(Rtr), st_tr, st_te)
-
-
-def _study_centre_scale(L, n_tr, st_tr, st_te):
-    """Subtract each study's (label-free) mean, then standardize with training stats."""
-    L = np.array(L, dtype=float)
-    st = np.concatenate([st_tr, st_te])
-    for s in np.unique(st):
-        m = st == s
-        L[m] -= L[m].mean(axis=0)
-    mu, sd = L[:n_tr].mean(axis=0), L[:n_tr].std(axis=0) + 1e-6
-    L = (L - mu) / sd
-    return L[:n_tr], L[n_tr:]
-
-
-def _within_auc(y, p, study, w=None):
-    """Mean within-study AUROC over studies with both classes."""
-    aucs = []
-    for s in np.unique(study):
-        m = study == s
-        if len(np.unique(y[m])) == 2:
-            aucs.append(roc_auc_score(y[m], p[m]))
-    return np.mean(aucs) if aucs else 0.5
-
-
-def _inner_splits(Xtr, y, groups):
-    if groups is not None and len(np.unique(groups)) >= 3:
-        return list(GroupKFold(n_splits=3).split(Xtr, y, groups))
-    return list(StratifiedKFold(3, shuffle=True, random_state=0).split(Xtr, y))
-
-
-def _fit_lr(Xtr, y, w, study, splits, Xte):
-    """Tune C by within-study AUROC on inner splits; return test scores and best-C OOF."""
-    Cs = [0.003, 0.01, 0.03, 0.1, 0.3]
-    best_c, best, best_oof = Cs[0], -1, None
-    for C in Cs:
-        oof = np.zeros(len(y))
-        for tr, va in splits:
-            lr = LogisticRegression(C=C, max_iter=2000)
-            lr.fit(Xtr[tr], y[tr], sample_weight=w[tr])
-            oof[va] = lr.decision_function(Xtr[va])
-        sc = _within_auc(y, oof, study)
-        if sc > best:
-            best, best_c, best_oof = sc, C, oof
-    lr = LogisticRegression(C=best_c, max_iter=2000)
-    lr.fit(Xtr, y, sample_weight=w)
-    return lr.decision_function(Xte), best_oof
-
-
-def _make_rf(n_estimators=500):
-    return RandomForestClassifier(n_estimators=n_estimators, min_samples_leaf=3,
-                                  random_state=0, n_jobs=-1)
-
-
-def _tune_alpha(y, oof_rf, oof_lr, study):
-    """RF weight in the rank blend, chosen by within-study AUROC of inner OOF predictions."""
-    n = len(y)
-    r_rf, r_lr = rankdata(oof_rf) / n, rankdata(oof_lr) / n
-    best_a = BLEND_ALPHAS[0]
-    best = _within_auc(y, best_a * r_rf + (1 - best_a) * r_lr, study)
-    for a in BLEND_ALPHAS[1:]:
-        sc = _within_auc(y, a * r_rf + (1 - a) * r_lr, study)
-        if sc > best + BLEND_MIN_GAIN:
-            best, best_a = sc, a
-    return best_a
+        d_tr = {c: np.zeros(len(A_tr)) for c in (0, 1)}
+        d_te = {c: np.zeros(len(A_te)) for c in (0, 1)}
+        for s in pd.unique(np.concatenate([s_tr, s_te])):
+            tr_i, te_i = s_tr == s, s_te == s
+            for c, is_c in ((0, y != pos), (1, y == pos)):
+                ref = tr_i & is_c
+                if ref.sum() < 2:
+                    ref = is_c
+                if ref.sum() == 0:
+                    continue
+                if tr_i.any():
+                    D = _dist(A_tr[tr_i], A_tr[ref], metric)
+                    same = groups[tr_i][:, None] == groups[ref][None, :]
+                    D[same] = np.nan
+                    d_tr[c][tr_i] = _median_rows(D)
+                if te_i.any():
+                    D = _dist(A_te[te_i], A_tr[ref], metric)
+                    d_te[c][te_i] = _median_rows(D)
+        for a, b in ((d_tr[0], d_te[0]), (d_tr[1], d_te[1]), (d_tr[0] - d_tr[1], d_te[0] - d_te[1])):
+            ftr.append(a.copy())
+            fte.append(b.copy())
+    Ftr, Fte = np.column_stack(ftr), np.column_stack(fte)
+    # Per-study standardization using training rows only (label-free statistics).
+    for s in pd.unique(s_tr):
+        tr_i, te_i = s_tr == s, s_te == s
+        mu = Ftr[tr_i].mean(axis=0)
+        sd = Ftr[tr_i].std(axis=0) + 1e-9
+        Ftr[tr_i] = (Ftr[tr_i] - mu) / sd
+        if te_i.any():
+            Fte[te_i] = (Fte[te_i] - mu) / sd
+    return Ftr, Fte
 
 
 def fit_predict(F_train, y_train, F_test, ctx):
-    cols = F_train.columns                                  # align test taxa to training taxa
-    pref_masks = {p: np.array([str(c).startswith(p) for c in cols]) for p in LR_PREFIXES}
-    is_div = np.array([str(c).startswith(DIV_PREFIX) for c in cols])
-    is_gen = ~is_div
-    for m in pref_masks.values():
-        is_gen &= ~m
-    Atr = F_train[cols].values.astype(float)
-    Ate = F_test.reindex(columns=cols, fill_value=0).values.astype(float)
-    Xtr, Xte = Atr[:, is_gen], Ate[:, is_gen]               # genus block
-    Dtr, Dte = Atr[:, is_div], Ate[:, is_div]               # diversity block
+    all_cols = F_train.columns
+    F_te = F_test.reindex(columns=all_cols, fill_value=0)
+    is_ra = np.array([str(c).startswith(RA_PREFIX) for c in all_cols])
+    cols = all_cols[~is_ra]                                 # ranked rCLR taxa + modules (RF features)
+    Xtr, Xte = F_train[cols].values, F_te[cols].values
     y = np.asarray(y_train)
-    meta_tr, meta_te = ctx.get("meta_train", None), ctx.get("meta_test", None)
-    if meta_tr is not None and "study" in meta_tr and len(meta_tr) == len(Xtr):
-        st_tr = meta_tr["study"].astype(str).values
-        w = _balanced_weights(y, st_tr)
-    else:
-        st_tr = np.array(["all"] * len(Xtr))
-        w = np.ones(len(y))
-    if meta_te is not None and "study" in meta_te and len(meta_te) == len(Xte):
-        st_te = meta_te["study"].astype(str).values
-    else:
-        st_te = np.array(["all"] * len(Xte))
+    groups = ctx.get("groups_train") if isinstance(ctx, dict) else None
+    groups = np.asarray(groups) if groups is not None and len(groups) == len(y) else np.arange(len(y))
+    s_tr = _study_from_meta(F_train, ctx.get("meta_train"))
+    s_te = _study_from_meta(F_test, ctx.get("meta_test"))
 
-    groups = ctx.get("groups_train", None)
-    if groups is not None and len(groups) != len(y):
-        groups = None
-    splits = _inner_splits(Xtr, y, None if groups is None else np.asarray(groups))
+    is_mod = np.array([str(c).startswith(MOD_PREFIX) for c in cols])
+    depth = np.array([str(c).count(";") + 1 for c in cols])
+    blocks = [(Xtr[:, m], Xte[:, m], "cityblock")
+              for m in (depth == 6, depth == 5, ~is_mod)]
+    for d in (6, 5):
+        rc = [c for c in all_cols[is_ra] if c.startswith(f"{RA_PREFIX}{d}|")]
+        if rc:
+            blocks.append((F_train[rc].values.astype(float), F_te[rc].values.astype(float),
+                           "braycurtis"))
 
-    rf = _make_rf()
-    rf.fit(Xtr, y, sample_weight=w)
-    p_rf = rf.predict_proba(Xte)[:, 1]
-
-    Gtr, Gte = _clr_centred(Xtr, Xte, st_tr, st_te)
-    blocks_tr, blocks_te = [Gtr], [Gte]
-    for p in LR_PREFIXES:                                   # family, order, class, phylum CLR
-        m = pref_masks[p]
-        if m.sum() > 1:
-            Hr, He = _clr_centred(Atr[:, m], Ate[:, m], st_tr, st_te)
-            blocks_tr.append(Hr)
-            blocks_te.append(He)
-    if Dtr.shape[1] > 0:
-        Ddr, Dde = _study_centre_scale(np.vstack([Dtr, Dte]), len(Dtr), st_tr, st_te)
-        blocks_tr.append(Ddr)
-        blocks_te.append(Dde)
-    Ztr, Zte = np.hstack(blocks_tr), np.hstack(blocks_te)
-    p_lr, oof_lr = _fit_lr(Ztr, y, w, st_tr, splits, Zte)
-
-    # inner OOF RF predictions on the same grouped splits to tune the blend weight
-    oof_rf = np.zeros(len(y))
-    for tr, va in splits:
-        rf_in = _make_rf(300)
-        rf_in.fit(Xtr[tr], y[tr], sample_weight=w[tr])
-        oof_rf[va] = rf_in.predict_proba(Xtr[va])[:, 1]
-    alpha = _tune_alpha(y, oof_rf, oof_lr, st_tr)
-
-    n = len(Xte)
-    return alpha * rankdata(p_rf) / n + (1 - alpha) * rankdata(p_lr) / n
+    Dtr, Dte = _dysbiosis_features(blocks, y, groups, s_tr, s_te)
+    Xtr = np.hstack([Xtr, Dtr])
+    Xte = np.hstack([Xte, Dte])
+    rf = RandomForestClassifier(n_estimators=500, random_state=0, n_jobs=-1)
+    rf.fit(Xtr, y)
+    return rf.predict_proba(Xte)[:, 1]

@@ -10,26 +10,29 @@ def _study_labels(items, ctx):
         return np.zeros(len(items), dtype=object)
     if meta.index.equals(items.index) or set(items.index).issubset(set(meta.index)):
         try:
-            return meta.loc[items.index, "study"].astype(str).values
+            return meta.loc[items.index, "study"].values
         except Exception:
             pass
     if len(meta) == len(items):
-        return meta["study"].astype(str).values
+        return meta["study"].values
     return np.zeros(len(items), dtype=object)
 
 
 def featurize(items, ctx):
     rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
     genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
-    G = rel.T.groupby(np.array(genus)).sum().T          # samples x genera
-    study = _study_labels(G, ctx)
-    out = pd.DataFrame(0.0, index=G.index, columns=G.columns)
-    for s in pd.unique(study):
-        m = study == s
-        sub = G.loc[m]
-        # within-study percentile rank (ties averaged) -> removes depth/protocol shifts
-        out.loc[m] = (sub.rank(axis=0, method="average") / (len(sub) + 1)).values
-    return out
+    G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
+    study = pd.Series(_study_labels(items, ctx), index=G.index).astype(str)
+    out = np.zeros(G.shape, dtype=float)
+    vals = G.values
+    for s in study.unique():
+        idx = np.where(study.values == s)[0]
+        n = len(idx)
+        sub = pd.DataFrame(vals[idx])
+        # fraction of same-study samples with strictly lower abundance -> zeros map to 0
+        r = (sub.rank(axis=0, method="min").values - 1.0) / max(n - 1, 1)
+        out[idx] = r
+    return pd.DataFrame(out, index=G.index, columns=G.columns)
 
 
 def fit_predict(F_train, y_train, F_test, ctx):

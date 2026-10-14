@@ -1,5 +1,6 @@
 PARAMS = {'level': 'otu', 'norm': 'sqrt_relab', 'prevalence': 0.1, 'study_std': False, 'model': 'lr_l2', 'n_estimators': 1000, 'max_depth': 8, 'C': 0.03228219691696582}
-"""Non-LLM search baseline template (PARAMS is prepended by core/search.py)."""
+"""Search-baseline template (PARAMS is prepended by core/search.py). Written after the loop runs;
+the search space includes feature families the loop found (loop-informed baseline)."""
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier

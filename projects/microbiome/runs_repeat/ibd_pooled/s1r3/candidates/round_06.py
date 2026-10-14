@@ -1,75 +1,62 @@
-"""Genus-level relative abundance + Gevers-style dysbiosis index (log-ratio of IBD-enriched vs
-IBD-depleted taxa) + random forest, with study x class balanced sample weights so that study
-identity (confounded with case/control ratio) carries no label information."""
+"""Lineage-aware family+genus relative abundance, percentile-ranked within study (batch harmonization)
++ random forest trained with study x class balanced sample weights."""
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
-# Gevers et al. 2014 (RISK cohort) microbial dysbiosis index taxa
-_UP_FAMILIES = {"Enterobacteriaceae", "Pasteurellaceae", "Veillonellaceae", "Fusobacteriaceae",
-                "Neisseriaceae", "Gemellaceae"}
-_DOWN_ORDERS = {"Bacteroidales", "Clostridiales"}
-_DOWN_FAMILIES = {"Erysipelotrichaceae", "Bifidobacteriaceae"}
+
+def _study_labels(items, ctx, key="meta"):
+    meta = ctx.get(key) if isinstance(ctx, dict) else None
+    if meta is None or "study" not in getattr(meta, "columns", []):
+        return np.zeros(len(items), dtype=object)
+    if meta.index.isin(items.index).all() and items.index.isin(meta.index).all():
+        return meta.loc[items.index, "study"].astype(str).values
+    if len(meta) == len(items):
+        return meta["study"].astype(str).values
+    return np.zeros(len(items), dtype=object)
 
 
-def _level(c, i):
-    parts = c.split(";")
-    if len(parts) <= i:
-        return ""
-    p = parts[i]
-    return p.split("__", 1)[1] if "__" in p else p
-
-
-def _dysbiosis(rel):
-    fam = np.array([_level(c, 4) for c in rel.columns])
-    order = np.array([_level(c, 3) for c in rel.columns])
-    up = np.isin(fam, list(_UP_FAMILIES))
-    down = (np.isin(order, list(_DOWN_ORDERS)) | np.isin(fam, list(_DOWN_FAMILIES))) & ~up
-    eps = 1e-4
-    up_ab = rel.values[:, up].sum(axis=1)
-    down_ab = rel.values[:, down].sum(axis=1)
-    return pd.DataFrame({
-        "__MDI": np.log((up_ab + eps) / (down_ab + eps)),
-        "__log_up": np.log(up_ab + eps),
-        "__log_down": np.log(down_ab + eps),
-    }, index=rel.index)
+def _lineage(col, depth):
+    # Full lineage prefix up to `depth` levels (k,p,c,o,f = 5; +g = 6), so that
+    # unannotated genera ('g__') stay distinct per family instead of being lumped together.
+    parts = col.split(";")
+    parts = parts + [""] * max(0, depth - len(parts))
+    return ";".join(parts[:depth])
 
 
 def featurize(items, ctx):
     rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
-    genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
-    G = rel.T.groupby(np.array(genus)).sum().T             # samples x genera
-    return pd.concat([G, _dysbiosis(rel)], axis=1)
+    blocks = []
+    for depth in (5, 6):                                    # family, genus
+        keys = np.array([_lineage(c, depth) for c in rel.columns])
+        blocks.append(rel.T.groupby(keys).sum().T)
+    G = pd.concat(blocks, axis=1)
+    G = G.loc[:, ~G.columns.duplicated()]
+    # Per-study percentile ranks: removes study-specific depth/region scale shifts,
+    # keeps within-study ordering (all zeros within a study share one tied rank).
+    studies = _study_labels(G, ctx)
+    out = pd.DataFrame(0.0, index=G.index, columns=G.columns)
+    for s in pd.unique(studies):
+        m = studies == s
+        out.loc[m] = G.loc[m].rank(axis=0, method="average", pct=True).values
+    return out
 
 
-def _balanced_weights(y, study):
-    """Within each study, cases and controls get equal total weight; each study keeps
-    total weight proportional to its size. Removes the study <-> label confound."""
+def _balanced_weights(studies, y):
+    # Each (study, class) cell gets equal total weight, so small studies and the
+    # minority class shape the trees as much as the dominant study does.
     y = np.asarray(y)
-    study = np.asarray(study)
-    w = np.ones(len(y), dtype=float)
-    for s in np.unique(study):
-        ms = study == s
-        n_s = ms.sum()
-        classes = np.unique(y[ms])
-        if len(classes) < 2:
-            # single-class study gives no within-study contrast; down-weight it
-            w[ms] = 0.5
-            continue
-        for c in classes:
-            m = ms & (y == c)
-            w[m] = n_s / (len(classes) * m.sum())
-    return w * len(y) / w.sum()
+    cells = pd.Series(list(zip(studies, y)))
+    counts = cells.map(cells.value_counts()).values.astype(float)
+    w = 1.0 / counts
+    return w * len(w) / w.sum()
 
 
 def fit_predict(F_train, y_train, F_test, ctx):
-    cols = F_train.columns                                  # align test genera to training genera
+    cols = F_train.columns                                  # align test taxa to training taxa
     Xtr, Xte = F_train[cols].values, F_test.reindex(columns=cols, fill_value=0).values
-    meta_tr = ctx.get("meta_train", None)
-    if meta_tr is not None and "study" in meta_tr and len(meta_tr) == len(Xtr):
-        w = _balanced_weights(y_train, meta_tr["study"].astype(str).values)
-    else:
-        w = None
+    studies = _study_labels(F_train, ctx, key="meta_train")
+    w = _balanced_weights(studies, y_train)
     rf = RandomForestClassifier(n_estimators=500, random_state=0, n_jobs=-1)
     rf.fit(Xtr, np.asarray(y_train), sample_weight=w)
     return rf.predict_proba(Xte)[:, 1]

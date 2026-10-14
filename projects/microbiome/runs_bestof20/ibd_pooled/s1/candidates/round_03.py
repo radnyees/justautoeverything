@@ -5,17 +5,17 @@ from sklearn.ensemble import RandomForestClassifier
 
 
 def _study_labels(items, ctx):
-    meta = ctx.get("meta", None) if isinstance(ctx, dict) else None
-    if meta is None or "study" not in meta:
+    meta = ctx.get("meta") if isinstance(ctx, dict) else None
+    if meta is None or "study" not in getattr(meta, "columns", []):
         return np.zeros(len(items), dtype=object)
-    meta = meta
     try:
-        s = meta.loc[items.index, "study"].values
+        if items.index.isin(meta.index).all():
+            return meta.loc[items.index, "study"].astype(str).values
     except Exception:
-        s = meta["study"].values
-        if len(s) != len(items):
-            return np.zeros(len(items), dtype=object)
-    return np.asarray(s).astype(str)
+        pass
+    if len(meta) == len(items):
+        return meta["study"].astype(str).values
+    return np.zeros(len(items), dtype=object)
 
 
 def featurize(items, ctx):
@@ -23,10 +23,10 @@ def featurize(items, ctx):
     genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
     G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
     L = np.log10(G.values + 1e-5)
-    studies = _study_labels(items, ctx)
+    study = _study_labels(items, ctx)
     Z = np.zeros_like(L)
-    for s in np.unique(studies):
-        m = studies == s
+    for s in pd.unique(study):
+        m = study == s
         mu = L[m].mean(axis=0)
         sd = L[m].std(axis=0)
         sd = np.where(sd > 1e-8, sd, 1.0)

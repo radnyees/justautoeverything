@@ -1,49 +1,39 @@
-"""Genus-level log relative abundance, z-scored within study (batch harmonization) + random forest."""
+"""Genus-level relative abundance, per-study percentile-rank harmonization + random forest."""
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
-PSEUDO = 1e-5
+
+def _study_labels(items, ctx):
+    meta = ctx.get("meta", None) if isinstance(ctx, dict) else None
+    if meta is None or "study" not in getattr(meta, "columns", []):
+        return np.zeros(len(items), dtype=object)
+    try:
+        s = meta.loc[items.index, "study"].values
+    except Exception:
+        s = meta["study"].values
+        if len(s) != len(items):
+            return np.zeros(len(items), dtype=object)
+    return np.asarray(s).astype(str)
 
 
 def featurize(items, ctx):
     rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
     genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
     G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
-    return np.log10(G + PSEUDO)
-
-
-def _studies(meta, n):
-    if meta is not None and "study" in meta and len(meta) == n:
-        return meta["study"].astype(str).values
-    return np.array(["_all"] * n)
-
-
-def _per_study_z(Xtr, Xte, s_tr, s_te):
-    """Z-score each feature within study; stats from all (label-free) samples of that study."""
-    Xtr, Xte = Xtr.copy(), Xte.copy()
-    X_all = np.vstack([Xtr, Xte])
-    s_all = np.concatenate([s_tr, s_te])
-    for s in np.unique(s_all):
-        m_all = s_all == s
-        mu = X_all[m_all].mean(axis=0)
-        sd = X_all[m_all].std(axis=0)
-        sd = np.where(sd > 1e-8, sd, 1.0)
-        mtr, mte = s_tr == s, s_te == s
-        if mtr.any():
-            Xtr[mtr] = (Xtr[mtr] - mu) / sd
-        if mte.any():
-            Xte[mte] = (Xte[mte] - mu) / sd
-    return Xtr, Xte
+    # per-study percentile ranks: removes study-level depth/protocol shifts (label-free)
+    studies = _study_labels(items, ctx)
+    out = pd.DataFrame(0.0, index=G.index, columns=G.columns)
+    for s in np.unique(studies):
+        m = studies == s
+        sub = G.iloc[np.where(m)[0]]
+        out.iloc[np.where(m)[0]] = sub.rank(axis=0, pct=True, method="average").values
+    return out
 
 
 def fit_predict(F_train, y_train, F_test, ctx):
     cols = F_train.columns                                  # align test genera to training genera
-    Xtr = F_train[cols].values.astype(float)
-    Xte = F_test.reindex(columns=cols, fill_value=np.log10(PSEUDO)).values.astype(float)
-    s_tr = _studies(ctx.get("meta_train"), len(Xtr))
-    s_te = _studies(ctx.get("meta_test"), len(Xte))
-    Xtr, Xte = _per_study_z(Xtr, Xte, s_tr, s_te)
+    Xtr, Xte = F_train[cols].values, F_test.reindex(columns=cols, fill_value=0).values
     rf = RandomForestClassifier(n_estimators=500, random_state=0, n_jobs=-1)
-    rf.fit(Xtr, np.asarray(y_train))
+    rf.fit(Xtr, y_train)
     return rf.predict_proba(Xte)[:, 1]

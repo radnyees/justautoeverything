@@ -1,53 +1,124 @@
-"""Genus-level relative abundance, per-study prevalence filter + percentile-rank harmonization + random forest."""
+"""Multi-level lineage-prefix relative abundance + alpha diversity + Gevers dysbiosis index,
+per-study percentile-rank harmonization + random forest."""
 import numpy as np
 import pandas as pd
+from scipy.special import gammaln
 from sklearn.ensemble import RandomForestClassifier
 
-MIN_PREV = 0.10   # keep a genus if detected in >=10% of samples of at least one study
+
+# Gevers et al. 2014 (RISK) microbial dysbiosis index taxa
+_MDI_UP_FAMILIES = ["Enterobacteriaceae", "Pasteurellaceae", "Veillonellaceae",
+                    "Fusobacteriaceae", "Neisseriaceae", "Gemellaceae"]
+_MDI_DOWN_FAMILIES = ["Erysipelotrichaceae", "Bifidobacteriaceae"]
+_MDI_DOWN_ORDERS = ["Bacteroidales", "Clostridiales"]
 
 
 def _study_labels(items, ctx):
     meta = ctx.get("meta") if isinstance(ctx, dict) else None
     if meta is None or "study" not in getattr(meta, "columns", []):
-        return np.zeros(len(items), dtype=object)
+        return pd.Series("all", index=items.index)
     try:
-        s = meta["study"].reindex(items.index)
-        if s.isna().any():
-            raise KeyError
-        return s.astype(str).values
+        s = meta.loc[items.index, "study"]
+        return pd.Series(s.values, index=items.index).astype(str)
     except Exception:
         if len(meta) == len(items):
-            return meta["study"].astype(str).values
-        return np.zeros(len(items), dtype=object)
+            return pd.Series(meta["study"].values, index=items.index).astype(str)
+        return pd.Series("all", index=items.index)
 
 
-def featurize(items, ctx):
-    rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
-    genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
-    G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
-    studies = _study_labels(items, ctx)
+def _shannon(P):
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return -np.nansum(np.where(P > 0, P * np.log(P), 0.0), axis=1)
 
-    # label-free prevalence filter: drop genera that are rare in every study
-    present = (G > 0)
-    keep = np.zeros(G.shape[1], dtype=bool)
-    for s in pd.unique(studies):
-        m = studies == s
-        keep |= (present.loc[m].mean(axis=0).values >= MIN_PREV)
-    if keep.sum() >= 5:
-        G = G.loc[:, keep]
 
-    out = G.copy().astype(float)
-    for s in pd.unique(studies):
-        m = studies == s
-        sub = G.loc[m]
-        # within-study percentile ranks (ties averaged); robust to depth/region/protocol shifts
-        out.loc[m] = (sub.rank(axis=0, method="average") / max(m.sum(), 1)).values
+def _rarefied_richness(C, depth=1000):
+    """Expected number of observed OTUs when subsampling n reads without replacement."""
+    C = np.floor(np.asarray(C, dtype=float))
+    N = C.sum(axis=1)
+    out = np.zeros(C.shape[0])
+    for i in range(C.shape[0]):
+        Ni = C[i][C[i] > 0]
+        tot = N[i]
+        if tot <= 0:
+            continue
+        n = min(depth, tot)
+        # P(OTU absent) = C(tot - Ni, n) / C(tot, n); zero when tot - Ni < n
+        ok = (tot - Ni) >= n
+        logp = np.full(Ni.shape, -np.inf)
+        a = tot - Ni[ok]
+        logp[ok] = (gammaln(a + 1) - gammaln(a - n + 1)
+                    - gammaln(tot + 1) + gammaln(tot - n + 1))
+        out[i] = np.sum(1.0 - np.exp(logp))
     return out
 
 
+def _lineage_prefix(col, level):
+    """Lineage truncated at `level` (1=phylum ... 5=genus), dropping trailing empty ranks so
+    unclassified reads are attributed to their deepest named ancestor."""
+    parts = col.split(";")[: level + 1]
+    while len(parts) > 1 and parts[-1].strip().endswith("__"):
+        parts = parts[:-1]
+    return ";".join(parts)
+
+
+def _rank_name(col, prefix):
+    for tok in col.split(";"):
+        tok = tok.strip()
+        if tok.startswith(prefix):
+            return tok[len(prefix):].strip("[]")
+    return ""
+
+
+def _dysbiosis_index(rel):
+    """log(sum of IBD-increased taxa / sum of IBD-decreased taxa), Gevers 2014."""
+    fam = np.array([_rank_name(c, "f__") for c in rel.columns])
+    order = np.array([_rank_name(c, "o__") for c in rel.columns])
+    up = np.isin(fam, _MDI_UP_FAMILIES)
+    down = (np.isin(fam, _MDI_DOWN_FAMILIES) | np.isin(order, _MDI_DOWN_ORDERS)) & ~up
+    P = rel.values
+    eps = 1e-6
+    return np.log((P[:, up].sum(axis=1) + eps) / (P[:, down].sum(axis=1) + eps))
+
+
+def featurize(items, ctx):
+    counts = items.values.astype(float)
+    rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
+
+    # taxonomy-aware aggregation at phylum..genus; names keep the full lineage prefix
+    blocks = []
+    for level, tag in [(1, "p"), (2, "c"), (3, "o"), (4, "f"), (5, "g")]:
+        keys = np.array([_lineage_prefix(c, level) for c in rel.columns])
+        B = rel.T.groupby(keys).sum().T
+        B.columns = [f"{tag}|{k}" for k in B.columns]
+        blocks.append(B)
+    T = pd.concat(blocks, axis=1)
+    # drop clades identical to their parent (single-child chains) and all-zero columns
+    T = T.loc[:, (T > 0).any(axis=0)]
+    T = T.loc[:, ~T.T.duplicated(keep="last").values]
+
+    genus_keys = np.array([_lineage_prefix(c, 5) for c in rel.columns])
+    Gv = rel.T.groupby(genus_keys).sum().T.values
+
+    # alpha diversity (IBD: reduced diversity is a robust cross-cohort signal)
+    P = rel.values
+    A = pd.DataFrame({
+        "alpha__shannon_otu": _shannon(P),
+        "alpha__shannon_genus": _shannon(Gv),
+        "alpha__invsimpson_otu": 1.0 / np.clip((P ** 2).sum(axis=1), 1e-12, None),
+        "alpha__rich_rare1000": _rarefied_richness(counts, 1000),
+        "marker__gevers_mdi": _dysbiosis_index(rel),
+    }, index=items.index)
+    X = pd.concat([T, A], axis=1)
+
+    study = _study_labels(items, ctx)
+    # per-study percentile ranks: label-free harmonization of study-specific scale shifts
+    R = X.groupby(study.values).rank(pct=True, method="average")
+    return R.reindex(index=X.index, columns=X.columns).fillna(0.5)
+
+
 def fit_predict(F_train, y_train, F_test, ctx):
-    cols = F_train.columns                                  # align test genera to training genera
-    Xtr, Xte = F_train[cols].values, F_test.reindex(columns=cols, fill_value=0).values
+    cols = F_train.columns                                  # align test features to training features
+    Xtr, Xte = F_train[cols].values, F_test.reindex(columns=cols, fill_value=0.5).values
     rf = RandomForestClassifier(n_estimators=500, random_state=0, n_jobs=-1)
     rf.fit(Xtr, y_train)
     return rf.predict_proba(Xte)[:, 1]

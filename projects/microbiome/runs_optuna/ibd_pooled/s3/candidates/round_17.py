@@ -1,5 +1,6 @@
-PARAMS = {'level': 'otu', 'norm': 'log_relab', 'prevalence': 0.05, 'study_std': True, 'model': 'hgb', 'n_estimators': 300, 'max_depth': 2, 'C': 0.007665133930491983}
-"""Non-LLM search baseline template (PARAMS is prepended by core/search.py)."""
+PARAMS = {'level': 'family', 'norm': 'clr', 'prevalence': 0.05, 'study_std': False, 'model': 'lr_l2', 'n_estimators': 300, 'max_depth': 5, 'C': 0.0017294651122186692}
+"""Search-baseline template (PARAMS is prepended by core/search.py). Written after the loop runs;
+the search space includes feature families the loop found (loop-informed baseline)."""
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier

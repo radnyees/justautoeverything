@@ -1,4 +1,5 @@
-"""Genus-level log relative abundance, z-scored within study (batch harmonization) + random forest."""
+"""Genus-level log relative abundance, robustly standardized within each study (label-free
+harmonization of study/batch effects), + random forest."""
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -8,10 +9,13 @@ def _study_labels(items, ctx):
     meta = ctx.get("meta") if isinstance(ctx, dict) else None
     if meta is None or "study" not in getattr(meta, "columns", []):
         return np.zeros(len(items), dtype=object)
-    if meta.index.isin(items.index).all() and items.index.isin(meta.index).all():
-        return meta.loc[items.index, "study"].values
+    try:
+        if meta.index.equals(items.index) or items.index.isin(meta.index).all():
+            return meta.loc[items.index, "study"].astype(str).values
+    except Exception:
+        pass
     if len(meta) == len(items):
-        return meta["study"].values
+        return meta["study"].astype(str).values
     return np.zeros(len(items), dtype=object)
 
 
@@ -19,16 +23,19 @@ def featurize(items, ctx):
     rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
     genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
     G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
-    L = np.log10(G.values + 1e-5)
-    studies = _study_labels(items, ctx)
+    L = np.log10(G.values + 1e-5)                            # pseudocount ~ below typical detection
+    study = _study_labels(items, ctx)
     Z = np.zeros_like(L)
-    for s in pd.unique(studies):
-        m = studies == s
-        mu = L[m].mean(axis=0)
-        sd = L[m].std(axis=0)
-        sd[sd < 1e-8] = 1.0
-        Z[m] = (L[m] - mu) / sd
-    return pd.DataFrame(Z, index=items.index, columns=G.columns)
+    for s in pd.unique(study):
+        m = study == s
+        block = L[m]
+        med = np.median(block, axis=0)
+        q75, q25 = np.percentile(block, [75, 25], axis=0)
+        scale = q75 - q25
+        sd = block.std(axis=0)
+        scale = np.where(scale > 1e-8, scale, np.where(sd > 1e-8, sd, 1.0))
+        Z[m] = (block - med) / scale
+    return pd.DataFrame(Z, index=G.index, columns=G.columns)
 
 
 def fit_predict(F_train, y_train, F_test, ctx):

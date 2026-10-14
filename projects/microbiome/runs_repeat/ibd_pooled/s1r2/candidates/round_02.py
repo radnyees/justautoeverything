@@ -8,80 +8,67 @@ from sklearn.ensemble import RandomForestClassifier
 def _study_labels(items, ctx):
     meta = ctx.get("meta") if isinstance(ctx, dict) else None
     if meta is None or "study" not in getattr(meta, "columns", []):
-        return np.zeros(len(items), dtype=object)
+        return pd.Series("all", index=items.index)
     try:
-        s = meta["study"].reindex(items.index)
-        if s.isna().any():
-            raise KeyError
-        return s.astype(str).values
+        s = meta.loc[items.index, "study"]
+        return pd.Series(s.values, index=items.index).astype(str)
     except Exception:
         if len(meta) == len(items):
-            return meta["study"].astype(str).values
-        return np.zeros(len(items), dtype=object)
+            return pd.Series(meta["study"].values, index=items.index).astype(str)
+        return pd.Series("all", index=items.index)
 
 
 def _shannon(P):
     with np.errstate(divide="ignore", invalid="ignore"):
-        L = np.where(P > 0, P * np.log(P), 0.0)
-    return -L.sum(axis=1)
+        return -np.nansum(np.where(P > 0, P * np.log(P), 0.0), axis=1)
 
 
-def _inv_simpson(P):
-    return 1.0 / np.clip((P ** 2).sum(axis=1), 1e-12, None)
-
-
-def _expected_richness(C, depth):
-    """Analytic rarefied richness (Hurlbert) of each row of count matrix C at given depth."""
+def _rarefied_richness(C, depth=1000):
+    """Expected number of observed OTUs when subsampling n reads without replacement."""
+    C = np.floor(np.asarray(C, dtype=float))
+    N = C.sum(axis=1)
     out = np.zeros(C.shape[0])
-    for r in range(C.shape[0]):
-        n = C[r][C[r] > 0]
-        N = n.sum()
-        if N <= depth:
-            out[r] = len(n)
+    for i in range(C.shape[0]):
+        Ni = C[i][C[i] > 0]
+        tot = N[i]
+        if tot <= 0:
             continue
-        rest = N - n
-        ok = rest >= depth
-        logp = np.full(len(n), -np.inf)
-        logp[ok] = (gammaln(rest[ok] + 1) - gammaln(rest[ok] - depth + 1)
-                    - gammaln(N + 1) + gammaln(N - depth + 1))
-        out[r] = np.sum(1.0 - np.exp(logp))
+        n = min(depth, tot)
+        # P(OTU absent) = C(tot - Ni, n) / C(tot, n); zero when tot - Ni < n
+        ok = (tot - Ni) >= n
+        logp = np.full(Ni.shape, -np.inf)
+        a = tot - Ni[ok]
+        logp[ok] = (gammaln(a + 1) - gammaln(a - n + 1)
+                    - gammaln(tot + 1) + gammaln(tot - n + 1))
+        out[i] = np.sum(1.0 - np.exp(logp))
     return out
 
 
 def featurize(items, ctx):
-    C = items.values.astype(float)
-    depth = C.sum(axis=1)
-    rel = items.div(np.clip(depth, 1, None), axis=0)
+    counts = items.values.astype(float)
+    rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
     genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
     G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
-    studies = _study_labels(items, ctx)
 
-    div = pd.DataFrame(index=items.index)
+    # alpha diversity (IBD: reduced diversity is a robust cross-cohort signal)
     P = rel.values
-    div["__shannon_otu"] = _shannon(P)
-    div["__invsimpson_otu"] = _inv_simpson(P)
-    div["__shannon_genus"] = _shannon(G.values)
-    div["__invsimpson_genus"] = _inv_simpson(G.values)
-    rich = np.zeros(len(items))
-    for s in pd.unique(studies):
-        m = studies == s
-        d = max(int(np.percentile(depth[m], 10)), 50)        # common within-study depth
-        rich[m] = _expected_richness(C[m], d)
-    div["__rarefied_richness"] = rich
+    A = pd.DataFrame({
+        "alpha__shannon_otu": _shannon(P),
+        "alpha__shannon_genus": _shannon(G.values),
+        "alpha__invsimpson_otu": 1.0 / np.clip((P ** 2).sum(axis=1), 1e-12, None),
+        "alpha__rich_rare1000": _rarefied_richness(counts, 1000),
+    }, index=items.index)
+    X = pd.concat([G, A], axis=1)
 
-    feats = pd.concat([G, div], axis=1).astype(float)
-    out = feats.copy()
-    for s in pd.unique(studies):
-        m = studies == s
-        sub = feats.loc[m]
-        # within-study percentile ranks (ties averaged); robust to depth/region/protocol shifts
-        out.loc[m] = (sub.rank(axis=0, method="average") / max(m.sum(), 1)).values
-    return out
+    study = _study_labels(items, ctx)
+    # per-study percentile ranks: label-free harmonization of study-specific scale shifts
+    R = X.groupby(study.values).rank(pct=True, method="average")
+    return R.reindex(index=X.index, columns=X.columns).fillna(0.5)
 
 
 def fit_predict(F_train, y_train, F_test, ctx):
     cols = F_train.columns                                  # align test features to training features
-    Xtr, Xte = F_train[cols].values, F_test.reindex(columns=cols, fill_value=0).values
+    Xtr, Xte = F_train[cols].values, F_test.reindex(columns=cols, fill_value=0.5).values
     rf = RandomForestClassifier(n_estimators=500, random_state=0, n_jobs=-1)
     rf.fit(Xtr, y_train)
     return rf.predict_proba(Xte)[:, 1]

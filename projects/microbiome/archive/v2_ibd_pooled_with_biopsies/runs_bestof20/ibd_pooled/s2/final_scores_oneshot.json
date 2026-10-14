@@ -1,0 +1,11 @@
+{
+  "project": "microbiome",
+  "task": "ibd_pooled",
+  "seed": 2,
+  "run": "s2",
+  "subdir": "runs_bestof20",
+  "solution": "candidates/round_01.py",
+  "failed": true,
+  "error": "=440 eval=146 load=25s\nTraceback (most recent call last):\n  File \"/tmp/jae_osxmc0qr/core/harness.py\", line 317, in <module>\n    run(sys.argv[1])\n  File \"/tmp/jae_osxmc0qr/core/harness.py\", line 187, in run\n    F = featurize(both)\n        ^^^^^^^^^^^^^^^\n  File \"/tmp/jae_osxmc0qr/core/harness.py\", line 161, in featurize\n    return sol.featurize(items, dict(ctx_base, meta=meta))\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/tmpzcpwd6sz/solution.py\", line 29, in featurize\n    Z.values[m] = (block - mu) / sd\n    ~~~~~~~~^^^\nValueError: assignment destination is read-only\n",
+  "eval_seed": 0.7121698850773186
+}

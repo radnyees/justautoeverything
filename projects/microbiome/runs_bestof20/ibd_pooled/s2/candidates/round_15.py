@@ -1,4 +1,4 @@
-"""Genus-level relative abundance, per-study percentile-rank harmonized, + random forest."""
+"""Genus-level relative abundance, per-study percentile-rank harmonization + random forest."""
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -23,12 +23,12 @@ def featurize(items, ctx):
     rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
     genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
     G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
-    studies = _study_labels(items, ctx)
+    # Per-study percentile ranks: monotone within study, removes between-study scale shifts
+    study = _study_labels(items, ctx)
     out = pd.DataFrame(0.0, index=G.index, columns=G.columns)
-    for s in pd.unique(studies):
-        m = studies == s
-        # within-study percentile ranks (ties, e.g. zeros, get the average rank)
-        out.loc[m] = G.loc[m].rank(axis=0, pct=True, method="average").values
+    for s in pd.unique(study):
+        m = study == s
+        out.loc[m] = G.loc[m].rank(axis=0, method="average", pct=True).values
     return out
 
 

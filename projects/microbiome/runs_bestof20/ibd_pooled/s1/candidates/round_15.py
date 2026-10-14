@@ -1,4 +1,4 @@
-"""Genus-level relative abundance -> log -> per-study z-scoring (batch harmonization) + random forest."""
+"""Genus-level relative abundance, per-study percentile-rank harmonization + random forest."""
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -7,32 +7,23 @@ from sklearn.ensemble import RandomForestClassifier
 def _study_labels(items, ctx):
     meta = ctx.get("meta") if isinstance(ctx, dict) else None
     if meta is None or "study" not in getattr(meta, "columns", []):
-        return np.zeros(len(items), dtype=object)
-    try:
-        s = meta["study"].reindex(items.index)
-        if s.isna().any():
-            raise KeyError
-        return s.astype(str).values
-    except Exception:
-        if len(meta) == len(items):
-            return meta["study"].astype(str).values
-        return np.zeros(len(items), dtype=object)
+        return None
+    if meta.index.isin(items.index).all() and items.index.isin(meta.index).all():
+        return meta["study"].reindex(items.index).astype(str).values
+    if len(meta) == len(items):
+        return meta["study"].astype(str).values
+    return None
 
 
 def featurize(items, ctx):
     rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
     genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
     G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
-    L = np.log10(G.values + 1e-5)                           # log abundance (detection-limit pseudocount)
-    studies = _study_labels(items, ctx)
-    Z = np.zeros_like(L)
-    for s in pd.unique(studies):                            # per-study standardization (label-free)
-        m = studies == s
-        mu = L[m].mean(axis=0)
-        sd = L[m].std(axis=0)
-        sd[sd < 1e-8] = 1.0
-        Z[m] = (L[m] - mu) / sd
-    return pd.DataFrame(Z, index=G.index, columns=G.columns)
+    study = _study_labels(items, ctx)
+    if study is None:
+        return G.rank(pct=True)
+    # per-study percentile ranks: removes study-specific depth/protocol scale effects
+    return G.groupby(study, sort=False).rank(pct=True).loc[G.index]
 
 
 def fit_predict(F_train, y_train, F_test, ctx):

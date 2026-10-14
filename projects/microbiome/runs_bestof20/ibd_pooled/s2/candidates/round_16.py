@@ -1,37 +1,36 @@
-"""Genus-level log relative abundance, standardized within study (batch harmonization) + random forest."""
+"""Genus-level relative abundance, percentile-ranked WITHIN study (batch harmonization) + random forest."""
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
 
 def _study_labels(items, ctx):
-    meta = ctx.get("meta", None)
+    meta = ctx.get("meta") if isinstance(ctx, dict) else None
     if meta is None or "study" not in getattr(meta, "columns", []):
-        return np.zeros(len(items), dtype=object)
+        return pd.Series("all", index=items.index)
+    st = meta["study"]
+    if st.index.equals(items.index):
+        return st
     try:
-        s = meta["study"].reindex(items.index)
-        if s.isna().any():
-            raise KeyError
-        return s.values
+        s = st.reindex(items.index)
+        if s.notna().all():
+            return s
     except Exception:
-        return meta["study"].values[: len(items)]
+        pass
+    if len(st) == len(items):
+        return pd.Series(st.values, index=items.index)
+    return pd.Series("all", index=items.index)
 
 
 def featurize(items, ctx):
     rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
     genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
-    g = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
-    logg = np.log10(g + 1e-5)
-    studies = _study_labels(items, ctx)
-    out = logg.copy()
-    for s in pd.unique(studies):
-        m = studies == s
-        block = logg.values[m]
-        mu = block.mean(axis=0)
-        sd = block.std(axis=0)
-        sd[sd < 1e-8] = 1.0
-        out.values[m] = (block - mu) / sd
-    return out
+    G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
+    study = _study_labels(items, ctx).astype(str)
+    # percentile rank of each genus within its study (ties averaged; zeros share one low rank)
+    R = G.groupby(study.values).rank(pct=True, method="average")
+    R[G == 0] = 0.0                                          # absent stays absent across studies
+    return R.fillna(0.0)
 
 
 def fit_predict(F_train, y_train, F_test, ctx):

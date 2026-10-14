@@ -1,32 +1,37 @@
-"""Genus-level relative abundance, percentile-ranked WITHIN study (label-free batch harmonization) + random forest."""
+"""Genus-level log relative abundance, standardized within study (batch harmonization) + random forest."""
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
 
 def _study_labels(items, ctx):
-    meta = ctx.get("meta", None)
-    if meta is None or "study" not in meta:
+    meta = ctx.get("meta") if isinstance(ctx, dict) else None
+    if meta is None or "study" not in getattr(meta, "columns", []):
         return np.zeros(len(items), dtype=object)
-    if meta.index.equals(items.index) or set(items.index).issubset(set(meta.index)):
-        try:
-            return meta.loc[items.index, "study"].astype(str).values
-        except Exception:
-            pass
-    return meta["study"].astype(str).values[: len(items)]
+    try:
+        s = meta["study"].reindex(items.index)
+        if s.isna().any():
+            raise KeyError
+        return s.values
+    except Exception:
+        if len(meta) == len(items):
+            return meta["study"].values
+        return np.zeros(len(items), dtype=object)
 
 
 def featurize(items, ctx):
     rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
     genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
-    G = rel.T.groupby(np.array(genus)).sum().T             # samples x genera
-    study = _study_labels(items, ctx)
-    out = G.copy().astype(float)
-    for s in np.unique(study):
-        m = study == s
-        # within-study percentile rank (ties -> average), maps to (0, 1]
-        out.loc[m] = G.loc[m].rank(axis=0, method="average", pct=True).values
-    return out
+    G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
+    L = np.log10(G.values + 1e-5)
+    studies = _study_labels(items, ctx)
+    Z = np.empty_like(L)
+    for s in pd.unique(studies):
+        m = studies == s
+        mu = L[m].mean(axis=0)
+        sd = L[m].std(axis=0)
+        Z[m] = (L[m] - mu) / (sd + 1e-3)
+    return pd.DataFrame(Z, index=G.index, columns=G.columns)
 
 
 def fit_predict(F_train, y_train, F_test, ctx):

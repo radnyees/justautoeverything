@@ -5,20 +5,20 @@
   "run": "s3",
   "subdir": "runs_bestof20",
   "solution": "candidates/round_01.py",
-  "dev_seed": 0.747069,
-  "dev_champion": 0.759923,
-  "eval_seed": 0.7174133922975582,
-  "eval_champion": 0.7659889298185029,
-  "dev_gain": 0.012854000000000032,
-  "eval_gain": 0.04857553752094468,
+  "dev_seed": 0.681147,
+  "dev_champion": 0.73341,
+  "eval_seed": 0.7770896650874527,
+  "eval_champion": 0.8220413947736956,
+  "dev_gain": 0.05226300000000006,
+  "eval_gain": 0.04495172968624295,
   "eval_bootstrap": {
     "n_boot": 2000,
-    "boot_se": 0.023693351791516173,
+    "boot_se": 0.03793157147052541,
     "ci95": [
-      0.003754372139713841,
-      0.09479354075032927
+      -0.027629621534286934,
+      0.12910618660778403
     ],
-    "p_one_sided": 0.017
+    "p_one_sided": 0.1065
   },
   "external": {}
 }

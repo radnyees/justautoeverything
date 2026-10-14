@@ -1,16 +1,19 @@
-"""Genus-level relative abundance, log-transformed and z-scored WITHIN study (batch harmonization) + random forest."""
+"""Genus-level log relative abundance, standardized within study (batch harmonization) + random forest."""
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
 
 def _study_labels(items, ctx):
-    meta = ctx.get("meta", None)
+    meta = ctx.get("meta") if isinstance(ctx, dict) else None
     if meta is None or "study" not in meta:
         return np.zeros(len(items), dtype=object)
-    if meta.index.equals(items.index) or set(items.index).issubset(set(meta.index)):
+    try:
         return meta.loc[items.index, "study"].astype(str).values
-    return meta["study"].astype(str).values[: len(items)]
+    except Exception:
+        if len(meta) == len(items):
+            return meta["study"].astype(str).values
+        return np.zeros(len(items), dtype=object)
 
 
 def featurize(items, ctx):
@@ -18,18 +21,15 @@ def featurize(items, ctx):
     genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
     G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
     L = np.log10(G.values + 1e-5)
-
-    # per-study standardization of each genus (label-free harmonization)
     studies = _study_labels(items, ctx)
     Z = np.zeros_like(L)
-    for s in np.unique(studies):
+    for s in pd.unique(studies):                            # per-study standardization (label-free)
         m = studies == s
-        sub = L[m]
-        mu = sub.mean(axis=0)
-        sd = sub.std(axis=0)
-        sd = np.where(sd < 1e-8, 1.0, sd)
-        Z[m] = (sub - mu) / sd
-    return pd.DataFrame(Z, index=items.index, columns=G.columns)
+        mu = L[m].mean(axis=0)
+        sd = L[m].std(axis=0)
+        sd[sd < 1e-8] = 1.0
+        Z[m] = (L[m] - mu) / sd
+    return pd.DataFrame(Z, index=G.index, columns=G.columns)
 
 
 def fit_predict(F_train, y_train, F_test, ctx):

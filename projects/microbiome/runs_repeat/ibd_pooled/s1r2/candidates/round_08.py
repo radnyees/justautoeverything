@@ -1,119 +1,197 @@
-"""Genus-level features in two views: (R) within-study percentile ranks of relative abundance for a
-random forest, and (C) genus CLR (count pseudocount 0.5) z-scored within study for an L2 logistic
-regression (inner grouped CV for C). Both models are trained with per-(study, class) balanced
-sample weights so study prevalence is not learnable. Predictions are rank-averaged."""
+"""Multi-level lineage-prefix relative abundance (cross-study prevalence-filtered) + alpha diversity,
+per-study percentile-rank harmonization + a fold-internal 'distance from healthy' feature (mean
+distance to the k nearest same-study training controls), fed to a rank-averaged ensemble of a
+random forest and an L2 logistic regression, both with study x class balanced sample weights."""
 import numpy as np
 import pandas as pd
+from scipy.spatial.distance import cdist
+from scipy.special import gammaln
 from scipy.stats import rankdata
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import GroupKFold, StratifiedKFold
-from sklearn.metrics import roc_auc_score
-from sklearn.preprocessing import StandardScaler
-
-
-def _study_from_meta(meta, index, n):
-    if meta is None or "study" not in getattr(meta, "columns", []):
-        return np.zeros(n, dtype=object)
-    try:
-        s = meta["study"].reindex(index)
-        if s.isna().any():
-            raise KeyError
-        return s.astype(str).values
-    except Exception:
-        if len(meta) == n:
-            return meta["study"].astype(str).values
-        return np.zeros(n, dtype=object)
+from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
+from sklearn.model_selection import GroupKFold
 
 
 def _study_labels(items, ctx):
     meta = ctx.get("meta") if isinstance(ctx, dict) else None
-    return _study_from_meta(meta, items.index, len(items))
+    if meta is None or "study" not in getattr(meta, "columns", []):
+        return pd.Series("all", index=items.index)
+    try:
+        s = meta.loc[items.index, "study"]
+        return pd.Series(s.values, index=items.index).astype(str)
+    except Exception:
+        if len(meta) == len(items):
+            return pd.Series(meta["study"].values, index=items.index).astype(str)
+        return pd.Series("all", index=items.index)
+
+
+def _split_studies(F, ctx, key):
+    meta = ctx.get(key) if isinstance(ctx, dict) else None
+    if meta is None or "study" not in getattr(meta, "columns", []):
+        return np.array(["all"] * len(F))
+    try:
+        return meta.loc[F.index, "study"].astype(str).values
+    except Exception:
+        if len(meta) == len(F):
+            return meta["study"].astype(str).values
+        return np.array(["all"] * len(F))
+
+
+def _shannon(P):
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return -np.nansum(np.where(P > 0, P * np.log(P), 0.0), axis=1)
+
+
+def _rarefied_richness(C, depth=1000):
+    """Expected number of observed OTUs when subsampling n reads without replacement."""
+    C = np.floor(np.asarray(C, dtype=float))
+    N = C.sum(axis=1)
+    out = np.zeros(C.shape[0])
+    for i in range(C.shape[0]):
+        Ni = C[i][C[i] > 0]
+        tot = N[i]
+        if tot <= 0:
+            continue
+        n = min(depth, tot)
+        # P(OTU absent) = C(tot - Ni, n) / C(tot, n); zero when tot - Ni < n
+        ok = (tot - Ni) >= n
+        logp = np.full(Ni.shape, -np.inf)
+        a = tot - Ni[ok]
+        logp[ok] = (gammaln(a + 1) - gammaln(a - n + 1)
+                    - gammaln(tot + 1) + gammaln(tot - n + 1))
+        out[i] = np.sum(1.0 - np.exp(logp))
+    return out
+
+
+def _lineage_prefix(col, level):
+    """Lineage truncated at `level` (1=phylum ... 5=genus), dropping trailing empty ranks so
+    unclassified reads are attributed to their deepest named ancestor."""
+    parts = col.split(";")[: level + 1]
+    while len(parts) > 1 and parts[-1].strip().endswith("__"):
+        parts = parts[:-1]
+    return ";".join(parts)
 
 
 def featurize(items, ctx):
-    genus = np.array([c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in items.columns])
-    Gc = items.T.groupby(genus).sum().T.astype(float)        # samples x genera (counts)
-    rel = Gc.div(Gc.sum(axis=1).clip(lower=1), axis=0)
-    logc = np.log(Gc + 0.5)
-    clr = logc.sub(logc.mean(axis=1), axis=0)                # centered log-ratio per sample
-    studies = _study_labels(items, ctx)
-    R = rel.copy()
-    C = clr.copy()
-    for s in pd.unique(studies):
-        m = studies == s
-        # within-study percentile ranks (ties averaged); robust to depth/region/protocol shifts
-        R.loc[m] = (rel.loc[m].rank(axis=0, method="average") / max(m.sum(), 1)).values
-        sub = clr.loc[m]
-        # within-study z-score of CLR: keeps log fold-change scale, removes study offsets
-        C.loc[m] = ((sub - sub.mean(axis=0)) / sub.std(axis=0, ddof=0).clip(lower=1e-6)).values
-    R.columns = ["R|" + c for c in R.columns]
-    C.columns = ["C|" + c for c in C.columns]
-    return pd.concat([R, C], axis=1)
+    counts = items.values.astype(float)
+    rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
+    study = _study_labels(items, ctx)
+
+    # taxonomy-aware aggregation at phylum..genus; names keep the full lineage prefix
+    blocks = []
+    for level, tag in [(1, "p"), (2, "c"), (3, "o"), (4, "f"), (5, "g")]:
+        keys = np.array([_lineage_prefix(c, level) for c in rel.columns])
+        B = rel.T.groupby(keys).sum().T
+        B.columns = [f"{tag}|{k}" for k in B.columns]
+        blocks.append(B)
+    T = pd.concat(blocks, axis=1)
+    # drop clades identical to their parent (single-child chains) and all-zero columns
+    T = T.loc[:, (T > 0).any(axis=0)]
+    T = T.loc[:, ~T.T.duplicated(keep="last").values]
+
+    # cross-study prevalence filter (label-free): keep clades detected in >=5% of samples of
+    # EVERY study, so retained features are measurable under all protocols/regions/depths
+    prev = (T > 0).groupby(study.values).mean()
+    keep = (prev.min(axis=0) >= 0.05).values
+    if keep.sum() >= 20:
+        T = T.loc[:, keep]
+
+    genus_keys = np.array([_lineage_prefix(c, 5) for c in rel.columns])
+    Gv = rel.T.groupby(genus_keys).sum().T.values
+
+    # alpha diversity (IBD: reduced diversity is a robust cross-cohort signal)
+    P = rel.values
+    A = pd.DataFrame({
+        "alpha__shannon_otu": _shannon(P),
+        "alpha__shannon_genus": _shannon(Gv),
+        "alpha__invsimpson_otu": 1.0 / np.clip((P ** 2).sum(axis=1), 1e-12, None),
+        "alpha__rich_rare1000": _rarefied_richness(counts, 1000),
+    }, index=items.index)
+    X = pd.concat([T, A], axis=1)
+
+    # per-study percentile ranks: label-free harmonization of study-specific scale shifts
+    R = X.groupby(study.values).rank(pct=True, method="average")
+    return R.reindex(index=X.index, columns=X.columns).fillna(0.5)
 
 
-def _balanced_weights(studies, y):
-    """Weight 1/(n in study x class cell), rescaled to mean 1: each study contributes
-    equal case and control mass, removing study-prevalence as a learnable shortcut."""
-    y = np.asarray(y)
-    df = pd.DataFrame({"s": studies, "y": y})
-    cell = df.groupby(["s", "y"])["y"].transform("size").values.astype(float)
-    n_cls = df.groupby("s")["y"].transform("nunique").values.astype(float)
-    study_n = df.groupby("s")["y"].transform("size").values.astype(float)
-    # each study keeps total mass proportional to its size, split equally across its classes
-    w = study_n / (n_cls * cell)
-    return w * (len(w) / w.sum())
+def _healthy_distance(Xtr, y, s_tr, g_tr, Xte, s_te, k=10):
+    """Per-study percentile of the mean distance to the k nearest training controls of the same
+    study. Training samples never use themselves (or same-subject samples) as references."""
+    f_tr = np.full(len(Xtr), 0.5)
+    f_te = np.full(len(Xte), 0.5)
+    for s in np.unique(s_tr):
+        itr = np.where(s_tr == s)[0]
+        ctrl = itr[y[itr] == 0]
+        if len(ctrl) < 4:
+            continue
+        kk = min(k, len(ctrl) - 1)
+        D = cdist(Xtr[itr], Xtr[ctrl])
+        if g_tr is not None:
+            D[g_tr[itr][:, None] == g_tr[ctrl][None, :]] = np.nan
+        else:
+            D[itr[:, None] == ctrl[None, :]] = np.nan
+        D = np.sort(D, axis=1)[:, :kk]                     # NaNs sort to the end
+        with np.errstate(all="ignore"):
+            d_tr = np.nanmean(D, axis=1)
+        d_tr = np.where(np.isfinite(d_tr), d_tr, np.nanmedian(d_tr))
+        ref = np.sort(d_tr)
+        f_tr[itr] = (rankdata(d_tr) - 0.5) / len(d_tr)
+        ite = np.where(s_te == s)[0]
+        if len(ite):
+            d_te = np.sort(cdist(Xte[ite], Xtr[ctrl]), axis=1)[:, :kk].mean(axis=1)
+            lo = np.searchsorted(ref, d_te, side="left")
+            hi = np.searchsorted(ref, d_te, side="right")
+            f_te[ite] = 0.5 * (lo + hi) / len(ref)
+    return f_tr, f_te
 
 
-def _within_study_auc(y, p, studies):
-    aucs = []
-    for s in pd.unique(studies):
-        m = studies == s
-        if len(np.unique(y[m])) == 2:
-            aucs.append(roc_auc_score(y[m], p[m]))
-    return np.mean(aucs) if aucs else 0.5
-
-
-def _fit_lr(Xtr, y, w, studies, groups, Xte):
-    """L2 logistic regression; C chosen by grouped inner CV on within-study AUROC."""
-    Cs = [0.001, 0.003, 0.01, 0.03, 0.1]
-    if groups is not None and len(np.unique(groups)) >= 4:
-        splits = list(GroupKFold(n_splits=4).split(Xtr, y, groups))
-    else:
-        splits = list(StratifiedKFold(4, shuffle=True, random_state=0).split(Xtr, y))
-    scores = np.zeros(len(Cs))
-    for tr, va in splits:
-        sc = StandardScaler().fit(Xtr[tr])
-        A, B = sc.transform(Xtr[tr]), sc.transform(Xtr[va])
-        wi = _balanced_weights(studies[tr], y[tr])
-        for k, C in enumerate(Cs):
-            lr = LogisticRegression(C=C, max_iter=2000)
-            lr.fit(A, y[tr], sample_weight=wi)
-            scores[k] += _within_study_auc(y[va], lr.decision_function(B), studies[va])
-    C = Cs[int(np.argmax(scores))]
-    sc = StandardScaler().fit(Xtr)
-    lr = LogisticRegression(C=C, max_iter=2000)
-    lr.fit(sc.transform(Xtr), y, sample_weight=w)
-    return lr.decision_function(sc.transform(Xte))
+def _fit_logreg(Xtr, y, w, Xte, groups):
+    """L2 logistic regression on centered rank features; C chosen by inner grouped CV."""
+    Ztr, Zte = Xtr - 0.5, Xte - 0.5
+    Cs = np.logspace(-3, 0, 7)
+    n_groups = len(np.unique(groups)) if groups is not None else 0
+    try:
+        if n_groups < 3:
+            raise ValueError("not enough groups")
+        splits = list(GroupKFold(n_splits=min(5, n_groups)).split(Ztr, y, groups))
+        lr = LogisticRegressionCV(Cs=Cs, cv=splits, penalty="l2", scoring="roc_auc",
+                                  solver="lbfgs", max_iter=2000, n_jobs=-1)
+        lr.fit(Ztr, y, sample_weight=w)
+    except Exception:
+        lr = LogisticRegression(C=0.03, penalty="l2", solver="lbfgs", max_iter=2000)
+        lr.fit(Ztr, y, sample_weight=w)
+    return lr.decision_function(Zte)
 
 
 def fit_predict(F_train, y_train, F_test, ctx):
-    cols = F_train.columns
-    F_te = F_test.reindex(columns=cols, fill_value=0)
-    rcols = [c for c in cols if c.startswith("R|")]
-    ccols = [c for c in cols if c.startswith("C|")]
-    y = np.asarray(y_train).astype(int)
-    meta_tr = ctx.get("meta_train") if isinstance(ctx, dict) else None
-    studies_tr = _study_from_meta(meta_tr, F_train.index, len(F_train))
+    cols = F_train.columns                                  # align test features to training features
+    Xtr, Xte = F_train[cols].values, F_test.reindex(columns=cols, fill_value=0.5).values
+    y = np.asarray(y_train)
+
+    studies = _split_studies(F_train, ctx, "meta_train")
+    studies_te = _split_studies(F_test, ctx, "meta_test")
     groups = ctx.get("groups_train") if isinstance(ctx, dict) else None
     groups = np.asarray(groups) if groups is not None and len(groups) == len(y) else None
-    w = _balanced_weights(studies_tr, y)
+
+    # dysbiosis as deviation from the same-study healthy community (fold-internal, train labels only)
+    h_tr, h_te = _healthy_distance(Xtr, y, studies, groups, Xte, studies_te)
+    Xtr = np.column_stack([Xtr, h_tr])
+    Xte = np.column_stack([Xte, h_te])
+
+    # study x class balanced weights: each study contributes equally, and within each study
+    # cases and controls contribute equally -> splits target within-study discrimination
+    strata = pd.Series([f"{s}|{c}" for s, c in zip(studies, y)])
+    n_strata = strata.map(strata.value_counts()).values.astype(float)
+    n_cls = pd.Series(y).groupby(studies).nunique().reindex(studies).values.astype(float)
+    w = 1.0 / (n_strata * n_cls)
+    w = w * len(w) / w.sum()
 
     rf = RandomForestClassifier(n_estimators=500, random_state=0, n_jobs=-1)
-    rf.fit(F_train[rcols].values, y, sample_weight=w)
-    p_rf = rf.predict_proba(F_te[rcols].values)[:, 1]
+    rf.fit(Xtr, y, sample_weight=w)
+    p_rf = rf.predict_proba(Xte)[:, 1]
 
-    p_lr = _fit_lr(F_train[ccols].values, y, w, studies_tr, groups, F_te[ccols].values)
+    p_lr = _fit_logreg(Xtr, y, w, Xte, groups)
 
-    n = len(F_te)
-    return 0.5 * rankdata(p_rf) / n + 0.5 * rankdata(p_lr) / n
+    # rank-average: the two models' scores live on different scales
+    n = len(p_rf)
+    return 0.5 * (rankdata(p_rf) / n) + 0.5 * (rankdata(p_lr) / n)

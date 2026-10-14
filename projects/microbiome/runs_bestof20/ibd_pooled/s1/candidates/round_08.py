@@ -1,15 +1,15 @@
-"""Genus-level log relative abundance, z-scored WITHIN each study (label-free harmonization) + random forest."""
+"""Genus-level relative abundance, per-study percentile-rank harmonization + random forest."""
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
 
-def _study_vector(items, ctx):
+def _study_labels(items, ctx):
     meta = ctx.get("meta") if isinstance(ctx, dict) else None
     if meta is None or "study" not in getattr(meta, "columns", []):
         return np.zeros(len(items), dtype=object)
-    if meta.index.equals(items.index) or set(items.index).issubset(set(meta.index)):
-        return meta["study"].reindex(items.index).astype(str).values
+    if meta.index.equals(items.index) or items.index.isin(meta.index).all():
+        return meta.loc[items.index, "study"].astype(str).values
     if len(meta) == len(items):
         return meta["study"].astype(str).values
     return np.zeros(len(items), dtype=object)
@@ -19,16 +19,13 @@ def featurize(items, ctx):
     rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
     genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
     G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
-    L = np.log10(G.values + 1e-5)
-    study = _study_vector(items, ctx)
-    Z = np.zeros_like(L)
+    study = _study_labels(items, ctx)
+    out = pd.DataFrame(0.0, index=G.index, columns=G.columns)
     for s in pd.unique(study):
         m = study == s
-        mu = L[m].mean(axis=0)
-        sd = L[m].std(axis=0)
-        sd = np.where(sd > 1e-8, sd, 1.0)
-        Z[m] = (L[m] - mu) / sd
-    return pd.DataFrame(Z, index=G.index, columns=G.columns)
+        # within-study percentile rank (ties averaged): removes study-specific depth/region scale
+        out.loc[m] = G.loc[m].rank(axis=0, method="average", pct=True).values
+    return out
 
 
 def fit_predict(F_train, y_train, F_test, ctx):

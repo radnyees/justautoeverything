@@ -17,7 +17,7 @@ shortcut variables in code.
 | autism_abide | site/study one-hot | 0.568 | 0.501 |
 | autism_abide | age + sex + motion | 0.585 | 0.571 |
 | autism_abide | site + demographics | 0.596 | 0.561 |
-| ibd_pooled | site/study one-hot | 0.691 | 0.500 |
+| ibd_pooled | site/study one-hot | 0.693 | 0.500 |
 | csf_ad | site/study one-hot | 0.727 | 0.500 |
 | csf_ad | age + sex | 0.670 | 0.522 |
 | csf_ad | site + demographics | 0.691 | 0.472 |
@@ -27,12 +27,16 @@ shortcut variables in code.
 | task | split | seed pooled | seed within-site | v1 champion pooled | v1 champion within-site | v2 champion within-site (reported) |
 |---|---|---|---|---|---|---|
 | adhd_adhd200 | 1 | 0.611 | 0.453 | 0.813 | 0.731 | 0.717 |
-| ibd_pooled | 1 | 0.798 | 0.733 | 0.800 | 0.727 | 0.798 |
-| ibd_pooled | 2 | 0.793 | 0.712 | 0.804 | 0.719 | 0.743 |
-| ibd_pooled | 3 | 0.779 | 0.717 | 0.804 | 0.753 | 0.725 |
+| ibd_pooled | 1 | 0.798 | 0.733 | 0.800 | 0.727 | nan |
+| ibd_pooled | 2 | 0.793 | 0.712 | 0.804 | 0.719 | nan |
+| ibd_pooled | 3 | 0.779 | 0.717 | 0.804 | 0.753 | nan |
 | csf_ad | 1 | 0.955 | 0.952 | 0.962 | 0.983 | 0.927 |
 | csf_ad | 2 | 0.924 | 0.913 | 0.958 | 0.977 | 0.952 |
 | csf_ad | 3 | 0.913 | 0.874 | 0.977 | 0.983 | 0.984 |
+
+nan = not comparable: pooled IBD was redefined in v3 (stool only, grouped by person / twin pair),
+so its current champion is scored on different Eval items; the v1 IBD runs used the v2-era data,
+which also contained biopsies and repeated samples (DISCLOSURES.md).
 
 ## (c) Shortcut variables referenced in v1 champion code
 

@@ -1,0 +1,949 @@
+{
+"abnormal_tuab|1|champion|eval_anon": {
+"score": 0.930653,
+"external": {
+"tuab_official_eval": 0.930423
+},
+"log": ""
+},
+"abnormal_tuab|2|champion|eval_anon": {
+"score": 0.898516,
+"external": {
+"tuab_official_eval": 0.93254
+},
+"log": ""
+},
+"abnormal_tuab|3|champion|eval_anon": {
+"score": 0.926069,
+"external": {
+"tuab_official_eval": 0.920608
+},
+"log": ""
+},
+"adhd_adhd200|1|champion|eval_anon": {
+"score": 0.682774,
+"external": {},
+"log": ""
+},
+"adhd_adhd200|2|champion|eval_anon": {
+"score": 0.629236,
+"external": {},
+"log": ""
+},
+"adhd_adhd200|3|champion|eval_anon": {
+"score": 0.64934,
+"external": {},
+"log": ""
+},
+"adhd_tdbrain|1|champion|eval_anon": {
+"score": 0.869231,
+"external": {},
+"log": ""
+},
+"adhd_tdbrain|2|champion|eval_anon": {
+"score": 1.0,
+"external": {},
+"log": ""
+},
+"adhd_tdbrain|3|champion|eval_anon": {
+"score": 0.897436,
+"external": {},
+"log": ""
+},
+"autism_abide|1|champion|eval_anon": {
+"score": 0.760533,
+"external": {},
+"log": ""
+},
+"autism_abide|2|champion|eval_anon": {
+"score": 0.816538,
+"external": {},
+"log": ""
+},
+"autism_abide|3|champion|eval_anon": {
+"score": 0.758401,
+"external": {},
+"log": ""
+},
+"crc_baxter|1|champion|eval_anon": {
+"score": 0.815891,
+"external": {
+"crc_zeller": 0.801301,
+"crc_zackular": 0.788889,
+"crc_xiang": 0.692641,
+"crc_zhao": 0.666149
+},
+"log": ""
+},
+"crc_baxter|1|seed|eval_anon": {
+"score": 0.854264,
+"external": {
+"crc_zeller": 0.81252,
+"crc_zackular": 0.792222,
+"crc_xiang": 0.747835,
+"crc_zhao": 0.664014
+},
+"log": ""
+},
+"crc_baxter|2|champion|eval_anon": {
+"score": 0.734109,
+"external": {
+"crc_zeller": 0.804228,
+"crc_zackular": 0.792222,
+"crc_xiang": 0.75974,
+"crc_zhao": 0.742236
+},
+"log": ""
+},
+"crc_baxter|2|seed|eval_anon": {
+"score": 0.755814,
+"external": {
+"crc_zeller": 0.818374,
+"crc_zackular": 0.802222,
+"crc_xiang": 0.762987,
+"crc_zhao": 0.74243
+},
+"log": ""
+},
+"crc_baxter|3|champion|eval_anon": {
+"score": 0.693411,
+"external": {
+"crc_zeller": 0.777398,
+"crc_zackular": 0.716667,
+"crc_xiang": 0.687229,
+"crc_zhao": 0.681871
+},
+"log": ""
+},
+"crc_baxter|3|seed|eval_anon": {
+"score": 0.774031,
+"external": {
+"crc_zeller": 0.845691,
+"crc_zackular": 0.795556,
+"crc_xiang": 0.738095,
+"crc_zhao": 0.701669
+},
+"log": ""
+},
+"csf_ad|1|champion|eval_anon": {
+"score": 0.926667,
+"external": {},
+"log": ""
+},
+"csf_ad|2|champion|eval_anon": {
+"score": 0.952222,
+"external": {},
+"log": ""
+},
+"csf_ad|3|champion|eval_anon": {
+"score": 0.984444,
+"external": {},
+"log": ""
+},
+"helsinki|1|champion|eval_anon": {
+"score": 0.934188,
+"external": {},
+"log": "[harness] neonatal_seizure/helsinki seed=1 mode=eval items=79 dev_pool=59 eval=20 load=0s\n[harness] done in 237s\nSCORE: 0.934188\n"
+},
+"helsinki|2|champion|eval_anon": {
+"score": 0.896044,
+"external": {},
+"log": "[harness] neonatal_seizure/helsinki seed=2 mode=eval items=79 dev_pool=59 eval=20 load=0s\n[harness] done in 421s\nSCORE: 0.896044\n"
+},
+"helsinki|3|champion|eval_anon": {
+"score": 0.866611,
+"external": {},
+"log": "[harness] neonatal_seizure/helsinki seed=3 mode=eval items=79 dev_pool=59 eval=20 load=0s\n[harness] done in 203s\nSCORE: 0.866611\n"
+},
+"mdd_tdbrain|1|champion|eval_anon": {
+"score": 0.984375,
+"external": {
+"mumtaz": 0.279762
+},
+"log": ""
+},
+"mdd_tdbrain|1|seed|eval_anon": {
+"score": 0.870888,
+"external": {
+"mumtaz": 0.25
+},
+"log": ""
+},
+"mdd_tdbrain|2|champion|eval_anon": {
+"score": 0.933388,
+"external": {
+"mumtaz": 0.586905
+},
+"log": ""
+},
+"mdd_tdbrain|2|seed|eval_anon": {
+"score": 0.791941,
+"external": {
+"mumtaz": 0.267857
+},
+"log": ""
+},
+"mdd_tdbrain|3|champion|eval_anon": {
+"score": 0.944079,
+"external": {
+"mumtaz": 0.615476
+},
+"log": ""
+},
+"mdd_tdbrain|3|seed|eval_anon": {
+"score": 0.887336,
+"external": {
+"mumtaz": 0.290476
+},
+"log": ""
+},
+"plasma_ad|1|champion|eval_anon": {
+"score": 0.923077,
+"external": {},
+"log": ""
+},
+"plasma_ad|1|seed|eval_anon": {
+"score": 0.940171,
+"external": {},
+"log": ""
+},
+"plasma_ad|2|champion|eval_anon": {
+"score": 0.794872,
+"external": {},
+"log": ""
+},
+"plasma_ad|2|seed|eval_anon": {
+"score": 0.888889,
+"external": {},
+"log": ""
+},
+"plasma_ad|3|champion|eval_anon": {
+"score": 0.880342,
+"external": {},
+"log": ""
+},
+"plasma_ad|3|seed|eval_anon": {
+"score": 0.905983,
+"external": {},
+"log": ""
+},
+"prism_auc|1|champion|eval_anon": {
+"score": 0.189529,
+"external": {},
+"log": ""
+},
+"prism_auc|2|champion|eval_anon": {
+"score": 0.165849,
+"external": {},
+"log": ""
+},
+"prism_auc|3|champion|eval_anon": {
+"score": 0.136221,
+"external": {},
+"log": ""
+},
+"sz_aseeg|1|champion|eval_anon": {
+"score": 0.74359,
+"external": {
+"msu": 0.679772,
+"repod": 0.530612
+},
+"log": ""
+},
+"sz_aseeg|1|seed|eval_anon": {
+"score": 0.698718,
+"external": {
+"msu": 0.695726,
+"repod": 0.489796
+},
+"log": ""
+},
+"sz_aseeg|2|champion|eval_anon": {
+"score": 0.775641,
+"external": {
+"msu": 0.523647,
+"repod": 0.454082
+},
+"log": ""
+},
+"sz_aseeg|2|seed|eval_anon": {
+"score": 0.583333,
+"external": {
+"msu": 0.681481,
+"repod": 0.5
+},
+"log": ""
+},
+"sz_aseeg|3|champion|eval_anon": {
+"score": 0.858974,
+"external": {
+"msu": 0.413675,
+"repod": 0.69898
+},
+"log": ""
+},
+"sz_aseeg|3|seed|eval_anon": {
+"score": 0.75,
+"external": {
+"msu": 0.709972,
+"repod": 0.505102
+},
+"log": ""
+},
+"control|cheat|eval": {
+"score": 1.0,
+"external": {
+"msu": 0.5,
+"repod": 0.5
+},
+"log": "[harness] eeg_psych/sz_aseeg seed=1 mode=eval items=101 dev_pool=76 eval=25 load=0s\n[harness] external msu: SCORE 0.500000\n[harness] external repod: SCORE 0.500000\n[harness] done in 0s\nSCORE: 1.000000\n"
+},
+"control|cheat|eval_anono": {
+"score": 0.5,
+"external": {
+"msu": 0.5,
+"repod": 0.5
+},
+"log": "[harness] eeg_psych/sz_aseeg seed=1 mode=eval items=101 dev_pool=76 eval=25 load=0s\n[harness] external msu: SCORE 0.500000\n[harness] external repod: SCORE 0.500000\n[harness] done in 0s\nSCORE: 0.500000\n"
+},
+"control|cheat|eval_anon": {
+"score": 0.5,
+"external": {
+"msu": 0.5,
+"repod": 0.5
+},
+"log": "[harness] eeg_psych/sz_aseeg seed=1 mode=eval items=101 dev_pool=76 eval=25 load=0s\n[harness] external msu: SCORE 0.500000\n[harness] external repod: SCORE 0.500000\n[harness] done in 0s\nSCORE: 0.500000\n"
+},
+"control|netprobe|eval": {
+"score": 0.448718,
+"external": {},
+"log": "NETWORK_PROBE: blocked URLError\n[harness] eeg_psych/sz_aseeg seed=1 mode=eval items=101 dev_pool=76 eval=25 load=0s\n[harness] external msu: SCORE 0.455840\n[harness] external repod: SCORE 0.520408\n[harness] done in 0s\nSCORE: 0.448718\n"
+},
+"crc_baxter|1|champion|eval": {
+"score": 0.815891,
+"external": {
+"crc_zeller": 0.8013008130081302,
+"crc_zackular": 0.7888888888888889,
+"crc_xiang": 0.6926406926406926,
+"crc_zhao": 0.6661490683229815
+},
+"log": "[harness] microbiome/crc_baxter seed=1 mode=eval items=292 dev_pool=219 eval=73 load=36s\n[harness] external crc_zeller: SCORE 0.801301\n[harness] external crc_zackular: SCORE 0.788889\n[harness] external crc_xiang: SCORE 0.692641\n[harness] external crc_zhao: SCORE 0.666149\n[harness] done in 41s\nSCORE: 0.815891\n"
+},
+"crc_baxter|1|champion|eval_anono": {
+"score": 0.815891,
+"external": {
+"crc_zeller": 0.8013008130081302,
+"crc_zackular": 0.7888888888888889,
+"crc_xiang": 0.6926406926406926,
+"crc_zhao": 0.6661490683229815
+},
+"log": "[harness] microbiome/crc_baxter seed=1 mode=eval items=292 dev_pool=219 eval=73 load=62s\n[harness] external crc_zeller: SCORE 0.801301\n[harness] external crc_zackular: SCORE 0.788889\n[harness] external crc_xiang: SCORE 0.692641\n[harness] external crc_zhao: SCORE 0.666149\n[harness] done in 71s\nSCORE: 0.815891\n"
+},
+"crc_baxter|1|seed|eval": {
+"score": 0.854264,
+"external": {
+"crc_zeller": 0.8125203252032521,
+"crc_zackular": 0.7922222222222222,
+"crc_xiang": 0.7478354978354979,
+"crc_zhao": 0.6640139751552795
+},
+"log": "[harness] microbiome/crc_baxter seed=1 mode=eval items=292 dev_pool=219 eval=73 load=39s\n[harness] external crc_zeller: SCORE 0.812520\n[harness] external crc_zackular: SCORE 0.792222\n[harness] external crc_xiang: SCORE 0.747835\n[harness] external crc_zhao: SCORE 0.664014\n[harness] done in 45s\nSCORE: 0.854264\n"
+},
+"crc_baxter|1|seed|eval_anono": {
+"score": 0.854264,
+"external": {
+"crc_zeller": 0.8125203252032521,
+"crc_zackular": 0.7922222222222222,
+"crc_xiang": 0.7478354978354979,
+"crc_zhao": 0.6640139751552795
+},
+"log": "[harness] microbiome/crc_baxter seed=1 mode=eval items=292 dev_pool=219 eval=73 load=46s\n[harness] external crc_zeller: SCORE 0.812520\n[harness] external crc_zackular: SCORE 0.792222\n[harness] external crc_xiang: SCORE 0.747835\n[harness] external crc_zhao: SCORE 0.664014\n[harness] done in 51s\nSCORE: 0.854264\n"
+},
+"crc_baxter|2|champion|eval": {
+"score": 0.724419,
+"external": {
+"crc_zeller": 0.8048780487804879,
+"crc_zackular": 0.7899999999999999,
+"crc_xiang": 0.7121212121212122,
+"crc_zhao": 0.6909937888198757
+},
+"log": "alty=None.\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"crc_baxter|2|champion|eval_anono": {
+"score": 0.724419,
+"external": {
+"crc_zeller": 0.8048780487804879,
+"crc_zackular": 0.7899999999999999,
+"crc_xiang": 0.7121212121212122,
+"crc_zhao": 0.6909937888198757
+},
+"log": "alty=None.\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"crc_baxter|2|seed|eval": {
+"score": 0.755814,
+"external": {
+"crc_zeller": 0.8183739837398374,
+"crc_zackular": 0.8022222222222222,
+"crc_xiang": 0.762987012987013,
+"crc_zhao": 0.7424301242236027
+},
+"log": "[harness] microbiome/crc_baxter seed=2 mode=eval items=292 dev_pool=219 eval=73 load=40s\n[harness] external crc_zeller: SCORE 0.818374\n[harness] external crc_zackular: SCORE 0.802222\n[harness] external crc_xiang: SCORE 0.762987\n[harness] external crc_zhao: SCORE 0.742430\n[harness] done in 45s\nSCORE: 0.755814\n"
+},
+"crc_baxter|2|seed|eval_anono": {
+"score": 0.755814,
+"external": {
+"crc_zeller": 0.8183739837398374,
+"crc_zackular": 0.8022222222222222,
+"crc_xiang": 0.762987012987013,
+"crc_zhao": 0.7424301242236027
+},
+"log": "[harness] microbiome/crc_baxter seed=2 mode=eval items=292 dev_pool=219 eval=73 load=60s\n[harness] external crc_zeller: SCORE 0.818374\n[harness] external crc_zackular: SCORE 0.802222\n[harness] external crc_xiang: SCORE 0.762987\n[harness] external crc_zhao: SCORE 0.742430\n[harness] done in 67s\nSCORE: 0.755814\n"
+},
+"crc_baxter|3|champion|eval": {
+"score": 0.67907,
+"external": {
+"crc_zeller": 0.7908943089430894,
+"crc_zackular": 0.7394444444444446,
+"crc_xiang": 0.685064935064935,
+"crc_zhao": 0.7255434782608695
+},
+"log": "alty=None.\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"crc_baxter|3|champion|eval_anono": {
+"score": 0.67907,
+"external": {
+"crc_zeller": 0.7908943089430894,
+"crc_zackular": 0.7394444444444446,
+"crc_xiang": 0.685064935064935,
+"crc_zhao": 0.7255434782608695
+},
+"log": "alty=None.\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"crc_baxter|3|seed|eval": {
+"score": 0.774031,
+"external": {
+"crc_zeller": 0.8456910569105692,
+"crc_zackular": 0.7955555555555556,
+"crc_xiang": 0.738095238095238,
+"crc_zhao": 0.7016692546583851
+},
+"log": "[harness] microbiome/crc_baxter seed=3 mode=eval items=292 dev_pool=219 eval=73 load=39s\n[harness] external crc_zeller: SCORE 0.845691\n[harness] external crc_zackular: SCORE 0.795556\n[harness] external crc_xiang: SCORE 0.738095\n[harness] external crc_zhao: SCORE 0.701669\n[harness] done in 44s\nSCORE: 0.774031\n"
+},
+"crc_baxter|3|seed|eval_anono": {
+"score": 0.774031,
+"external": {
+"crc_zeller": 0.8456910569105692,
+"crc_zackular": 0.7955555555555556,
+"crc_xiang": 0.738095238095238,
+"crc_zhao": 0.7016692546583851
+},
+"log": "[harness] microbiome/crc_baxter seed=3 mode=eval items=292 dev_pool=219 eval=73 load=52s\n[harness] external crc_zeller: SCORE 0.845691\n[harness] external crc_zackular: SCORE 0.795556\n[harness] external crc_xiang: SCORE 0.738095\n[harness] external crc_zhao: SCORE 0.701669\n[harness] done in 57s\nSCORE: 0.774031\n"
+},
+"plasma_ad|1|champion|eval": {
+"score": 0.923077,
+"external": {},
+"log": "[harness] proteomics_ad/plasma_ad seed=1 mode=eval items=89 dev_pool=67 eval=22 load=1s\n[harness] done in 2s\nSCORE: 0.923077\n"
+},
+"plasma_ad|1|champion|eval_anono": {
+"score": 0.923077,
+"external": {},
+"log": "[harness] proteomics_ad/plasma_ad seed=1 mode=eval items=89 dev_pool=67 eval=22 load=2s\n[harness] done in 3s\nSCORE: 0.923077\n"
+},
+"plasma_ad|1|seed|eval": {
+"score": 0.940171,
+"external": {},
+"log": "[harness] proteomics_ad/plasma_ad seed=1 mode=eval items=89 dev_pool=67 eval=22 load=1s\n[harness] done in 2s\nSCORE: 0.940171\n"
+},
+"plasma_ad|1|seed|eval_anono": {
+"score": 0.940171,
+"external": {},
+"log": "[harness] proteomics_ad/plasma_ad seed=1 mode=eval items=89 dev_pool=67 eval=22 load=2s\n[harness] done in 2s\nSCORE: 0.940171\n"
+},
+"plasma_ad|2|champion|eval": {
+"score": 0.794872,
+"external": {},
+"log": "[harness] proteomics_ad/plasma_ad seed=2 mode=eval items=89 dev_pool=67 eval=22 load=1s\n[harness] done in 2s\nSCORE: 0.794872\n"
+},
+"plasma_ad|2|champion|eval_anono": {
+"score": 0.794872,
+"external": {},
+"log": "[harness] proteomics_ad/plasma_ad seed=2 mode=eval items=89 dev_pool=67 eval=22 load=1s\n[harness] done in 2s\nSCORE: 0.794872\n"
+},
+"plasma_ad|2|seed|eval": {
+"score": 0.888889,
+"external": {},
+"log": "[harness] proteomics_ad/plasma_ad seed=2 mode=eval items=89 dev_pool=67 eval=22 load=1s\n[harness] done in 2s\nSCORE: 0.888889\n"
+},
+"plasma_ad|2|seed|eval_anono": {
+"score": 0.888889,
+"external": {},
+"log": "[harness] proteomics_ad/plasma_ad seed=2 mode=eval items=89 dev_pool=67 eval=22 load=1s\n[harness] done in 2s\nSCORE: 0.888889\n"
+},
+"plasma_ad|3|champion|eval": {
+"score": 0.880342,
+"external": {},
+"log": "[harness] proteomics_ad/plasma_ad seed=3 mode=eval items=89 dev_pool=67 eval=22 load=2s\n[harness] done in 2s\nSCORE: 0.880342\n"
+},
+"plasma_ad|3|champion|eval_anono": {
+"score": 0.880342,
+"external": {},
+"log": "[harness] proteomics_ad/plasma_ad seed=3 mode=eval items=89 dev_pool=67 eval=22 load=2s\n[harness] done in 2s\nSCORE: 0.880342\n"
+},
+"plasma_ad|3|seed|eval": {
+"score": 0.905983,
+"external": {},
+"log": "[harness] proteomics_ad/plasma_ad seed=3 mode=eval items=89 dev_pool=67 eval=22 load=2s\n[harness] done in 2s\nSCORE: 0.905983\n"
+},
+"plasma_ad|3|seed|eval_anono": {
+"score": 0.905983,
+"external": {},
+"log": "[harness] proteomics_ad/plasma_ad seed=3 mode=eval items=89 dev_pool=67 eval=22 load=1s\n[harness] done in 2s\nSCORE: 0.905983\n"
+},
+"csf_ad|1|champion|eval": {
+"score": 0.926667,
+"external": {},
+"log": "[harness] proteomics_ad/csf_ad seed=1 mode=eval items=137 dev_pool=103 eval=34 load=1s\n[harness] done in 1s\nSCORE: 0.926667\n"
+},
+"csf_ad|1|champion|eval_anono": {
+"score": 0.926667,
+"external": {},
+"log": "[harness] proteomics_ad/csf_ad seed=1 mode=eval items=137 dev_pool=103 eval=34 load=1s\n[harness] done in 1s\nSCORE: 0.926667\n"
+},
+"csf_ad|2|champion|eval": {
+"score": 0.952222,
+"external": {},
+"log": "[harness] proteomics_ad/csf_ad seed=2 mode=eval items=137 dev_pool=103 eval=34 load=1s\n[harness] done in 1s\nSCORE: 0.952222\n"
+},
+"csf_ad|2|champion|eval_anono": {
+"score": 0.952222,
+"external": {},
+"log": "[harness] proteomics_ad/csf_ad seed=2 mode=eval items=137 dev_pool=103 eval=34 load=1s\n[harness] done in 1s\nSCORE: 0.952222\n"
+},
+"csf_ad|3|champion|eval": {
+"score": 0.984444,
+"external": {},
+"log": "[harness] proteomics_ad/csf_ad seed=3 mode=eval items=137 dev_pool=103 eval=34 load=1s\n[harness] done in 3s\nSCORE: 0.984444\n"
+},
+"csf_ad|3|champion|eval_anono": {
+"score": 0.984444,
+"external": {},
+"log": "[harness] proteomics_ad/csf_ad seed=3 mode=eval items=137 dev_pool=103 eval=34 load=1s\n[harness] done in 4s\nSCORE: 0.984444\n"
+},
+"prism_auc|1|champion|eval": {
+"score": 0.181776,
+"external": {},
+"log": "[harness] drug_response/prism_auc seed=1 mode=eval items=477 dev_pool=357 eval=120 load=9s\n[harness] done in 68s\nSCORE: 0.181776\n"
+},
+"prism_auc|1|champion|eval_anono": {
+"score": 0.181776,
+"external": {},
+"log": "[harness] drug_response/prism_auc seed=1 mode=eval items=477 dev_pool=357 eval=120 load=6s\n[harness] done in 56s\nSCORE: 0.181776\n"
+},
+"prism_auc|2|champion|eval": {
+"score": 0.167812,
+"external": {},
+"log": "[harness] drug_response/prism_auc seed=2 mode=eval items=477 dev_pool=357 eval=120 load=6s\n[harness] done in 48s\nSCORE: 0.167812\n"
+},
+"prism_auc|2|champion|eval_anono": {
+"score": 0.167812,
+"external": {},
+"log": "[harness] drug_response/prism_auc seed=2 mode=eval items=477 dev_pool=357 eval=120 load=6s\n[harness] done in 45s\nSCORE: 0.167812\n"
+},
+"prism_auc|3|champion|eval": {
+"score": 0.131237,
+"external": {},
+"log": "[harness] drug_response/prism_auc seed=3 mode=eval items=477 dev_pool=357 eval=120 load=8s\n[harness] done in 62s\nSCORE: 0.131237\n"
+},
+"prism_auc|3|champion|eval_anono": {
+"score": 0.131237,
+"external": {},
+"log": "[harness] drug_response/prism_auc seed=3 mode=eval items=477 dev_pool=357 eval=120 load=6s\n[harness] done in 53s\nSCORE: 0.131237\n"
+},
+"autism_abide|1|champion|eval": {
+"score": 0.746815,
+"external": {},
+"log": "[harness] fmri_connectivity/autism_abide seed=1 mode=eval items=1035 dev_pool=773 eval=262 load=8s\n[harness] done in 145s\nSCORE: 0.746815\n"
+},
+"autism_abide|1|champion|eval_anono": {
+"score": 0.746815,
+"external": {},
+"log": "[harness] fmri_connectivity/autism_abide seed=1 mode=eval items=1035 dev_pool=773 eval=262 load=12s\n[harness] done in 160s\nSCORE: 0.746815\n"
+},
+"autism_abide|2|champion|eval": {
+"score": 0.816538,
+"external": {},
+"log": "[harness] fmri_connectivity/autism_abide seed=2 mode=eval items=1035 dev_pool=773 eval=262 load=7s\n[harness] done in 22s\nSCORE: 0.816538\n"
+},
+"autism_abide|2|champion|eval_anono": {
+"score": 0.816538,
+"external": {},
+"log": "[harness] fmri_connectivity/autism_abide seed=2 mode=eval items=1035 dev_pool=773 eval=262 load=7s\n[harness] done in 23s\nSCORE: 0.816538\n"
+},
+"autism_abide|3|champion|eval": {
+"score": 0.77208,
+"external": {},
+"log": "[harness] fmri_connectivity/autism_abide seed=3 mode=eval items=1035 dev_pool=773 eval=262 load=7s\n[harness] done in 200s\nSCORE: 0.772080\n"
+},
+"autism_abide|3|champion|eval_anono": {
+"score": 0.77208,
+"external": {},
+"log": "[harness] fmri_connectivity/autism_abide seed=3 mode=eval items=1035 dev_pool=773 eval=262 load=5s\n[harness] done in 139s\nSCORE: 0.772080\n"
+},
+"adhd_adhd200|1|champion|eval": {
+"score": 0.716888,
+"external": {},
+"log": "[harness] fmri_connectivity/adhd_adhd200 seed=1 mode=eval items=865 dev_pool=648 eval=217 load=8s\n[harness] done in 71s\nSCORE: 0.716888\n"
+},
+"adhd_adhd200|1|champion|eval_anono": {
+"score": 0.716888,
+"external": {},
+"log": "[harness] fmri_connectivity/adhd_adhd200 seed=1 mode=eval items=865 dev_pool=648 eval=217 load=7s\n[harness] done in 73s\nSCORE: 0.716888\n"
+},
+"adhd_adhd200|2|champion|eval": {
+"score": 0.629236,
+"external": {},
+"log": "[harness] fmri_connectivity/adhd_adhd200 seed=2 mode=eval items=865 dev_pool=648 eval=217 load=7s\n[harness] done in 52s\nSCORE: 0.629236\n"
+},
+"adhd_adhd200|2|champion|eval_anono": {
+"score": 0.629236,
+"external": {},
+"log": "[harness] fmri_connectivity/adhd_adhd200 seed=2 mode=eval items=865 dev_pool=648 eval=217 load=8s\n[harness] done in 58s\nSCORE: 0.629236\n"
+},
+"adhd_adhd200|3|champion|eval": {
+"score": 0.64934,
+"external": {},
+"log": "[harness] fmri_connectivity/adhd_adhd200 seed=3 mode=eval items=865 dev_pool=648 eval=217 load=2s\n[harness] done in 66s\nSCORE: 0.649340\n"
+},
+"adhd_adhd200|3|champion|eval_anono": {
+"score": 0.64934,
+"external": {},
+"log": "[harness] fmri_connectivity/adhd_adhd200 seed=3 mode=eval items=865 dev_pool=648 eval=217 load=3s\n[harness] done in 65s\nSCORE: 0.649340\n"
+},
+"mdd_tdbrain|1|champion|eval": {
+"score": 0.984375,
+"external": {
+"mumtaz": 0.27976190476190477
+},
+"log": "[harness] eeg_psych/mdd_tdbrain seed=1 mode=eval items=279 dev_pool=209 eval=70 load=1s\n[harness] external mumtaz: SCORE 0.279762\n[harness] done in 199s\nSCORE: 0.984375\n"
+},
+"mdd_tdbrain|1|champion|eval_anono": {
+"score": 0.984375,
+"external": {
+"mumtaz": 0.27976190476190477
+},
+"log": "[harness] eeg_psych/mdd_tdbrain seed=1 mode=eval items=279 dev_pool=209 eval=70 load=2s\n[harness] external mumtaz: SCORE 0.279762\n[harness] done in 199s\nSCORE: 0.984375\n"
+},
+"mdd_tdbrain|1|seed|eval": {
+"score": 0.870888,
+"external": {
+"mumtaz": 0.25
+},
+"log": "[harness] eeg_psych/mdd_tdbrain seed=1 mode=eval items=279 dev_pool=209 eval=70 load=1s\n[harness] external mumtaz: SCORE 0.250000\n[harness] done in 32s\nSCORE: 0.870888\n"
+},
+"mdd_tdbrain|1|seed|eval_anono": {
+"score": 0.870888,
+"external": {
+"mumtaz": 0.25
+},
+"log": "[harness] eeg_psych/mdd_tdbrain seed=1 mode=eval items=279 dev_pool=209 eval=70 load=1s\n[harness] external mumtaz: SCORE 0.250000\n[harness] done in 28s\nSCORE: 0.870888\n"
+},
+"mdd_tdbrain|2|champion|eval": {
+"score": 0.933388,
+"external": {
+"mumtaz": 0.5869047619047619
+},
+"log": "[harness] eeg_psych/mdd_tdbrain seed=2 mode=eval items=279 dev_pool=209 eval=70 load=5s\n[harness] external mumtaz: SCORE 0.586905\n[harness] done in 424s\nSCORE: 0.933388\n"
+},
+"mdd_tdbrain|2|champion|eval_anono": {
+"score": 0.933388,
+"external": {
+"mumtaz": 0.5869047619047619
+},
+"log": "[harness] eeg_psych/mdd_tdbrain seed=2 mode=eval items=279 dev_pool=209 eval=70 load=6s\n[harness] external mumtaz: SCORE 0.586905\n[harness] done in 366s\nSCORE: 0.933388\n"
+},
+"mdd_tdbrain|2|seed|eval": {
+"score": 0.791941,
+"external": {
+"mumtaz": 0.26785714285714285
+},
+"log": "[harness] eeg_psych/mdd_tdbrain seed=2 mode=eval items=279 dev_pool=209 eval=70 load=2s\n[harness] external mumtaz: SCORE 0.267857\n[harness] done in 33s\nSCORE: 0.791941\n"
+},
+"mdd_tdbrain|2|seed|eval_anono": {
+"score": 0.791941,
+"external": {
+"mumtaz": 0.26785714285714285
+},
+"log": "[harness] eeg_psych/mdd_tdbrain seed=2 mode=eval items=279 dev_pool=209 eval=70 load=1s\n[harness] external mumtaz: SCORE 0.267857\n[harness] done in 22s\nSCORE: 0.791941\n"
+},
+"mdd_tdbrain|3|champion|eval": {
+"score": 0.944079,
+"external": {
+"mumtaz": 0.6154761904761904
+},
+"log": "[harness] eeg_psych/mdd_tdbrain seed=3 mode=eval items=279 dev_pool=209 eval=70 load=1s\n[harness] external mumtaz: SCORE 0.615476\n[harness] done in 70s\nSCORE: 0.944079\n"
+},
+"mdd_tdbrain|3|champion|eval_anono": {
+"score": 0.944079,
+"external": {
+"mumtaz": 0.6154761904761904
+},
+"log": "[harness] eeg_psych/mdd_tdbrain seed=3 mode=eval items=279 dev_pool=209 eval=70 load=1s\n[harness] external mumtaz: SCORE 0.615476\n[harness] done in 86s\nSCORE: 0.944079\n"
+},
+"mdd_tdbrain|3|seed|eval": {
+"score": 0.887336,
+"external": {
+"mumtaz": 0.2904761904761905
+},
+"log": "[harness] eeg_psych/mdd_tdbrain seed=3 mode=eval items=279 dev_pool=209 eval=70 load=1s\n[harness] external mumtaz: SCORE 0.290476\n[harness] done in 27s\nSCORE: 0.887336\n"
+},
+"mdd_tdbrain|3|seed|eval_anono": {
+"score": 0.887336,
+"external": {
+"mumtaz": 0.2904761904761905
+},
+"log": "[harness] eeg_psych/mdd_tdbrain seed=3 mode=eval items=279 dev_pool=209 eval=70 load=1s\n[harness] external mumtaz: SCORE 0.290476\n[harness] done in 24s\nSCORE: 0.887336\n"
+},
+"adhd_tdbrain|1|champion|eval": {
+"score": 0.869231,
+"external": {},
+"log": "[harness] eeg_psych/adhd_tdbrain seed=1 mode=eval items=170 dev_pool=127 eval=43 load=0s\n[harness] done in 23s\nSCORE: 0.869231\n"
+},
+"adhd_tdbrain|1|champion|eval_anono": {
+"score": 0.869231,
+"external": {},
+"log": "[harness] eeg_psych/adhd_tdbrain seed=1 mode=eval items=170 dev_pool=127 eval=43 load=0s\n[harness] done in 35s\nSCORE: 0.869231\n"
+},
+"adhd_tdbrain|2|champion|eval": {
+"score": 1.0,
+"external": {},
+"log": "[harness] eeg_psych/adhd_tdbrain seed=2 mode=eval items=170 dev_pool=127 eval=43 load=0s\n[harness] done in 193s\nSCORE: 1.000000\n"
+},
+"adhd_tdbrain|2|champion|eval_anono": {
+"score": 1.0,
+"external": {},
+"log": "[harness] eeg_psych/adhd_tdbrain seed=2 mode=eval items=170 dev_pool=127 eval=43 load=0s\n[harness] done in 276s\nSCORE: 1.000000\n"
+},
+"adhd_tdbrain|3|champion|eval": {
+"score": 0.897436,
+"external": {},
+"log": "[harness] eeg_psych/adhd_tdbrain seed=3 mode=eval items=170 dev_pool=127 eval=43 load=0s\n[harness] done in 48s\nSCORE: 0.897436\n"
+},
+"adhd_tdbrain|3|champion|eval_anono": {
+"score": 0.897436,
+"external": {},
+"log": "[harness] eeg_psych/adhd_tdbrain seed=3 mode=eval items=170 dev_pool=127 eval=43 load=0s\n[harness] done in 48s\nSCORE: 0.897436\n"
+},
+"sz_aseeg|1|champion|eval": {
+"score": 0.74359,
+"external": {
+"msu": 0.6797720797720799,
+"repod": 0.5306122448979592
+},
+"log": "E 1.14. Use 'colin27_1020' instead.\n  pos = mne.channels.make_standard_montage(\"standard_1020\").get_positions()[\"ch_pos\"]\n/tmp/tmp2qxfpo_1/solution.py:202: FutureWarning: Montage name 'standard_1020' is deprecated and will be removed in MNE 1.14. Use 'colin27_1020' instead.\n  pos = mne.channels.make_standard_montage(\"standard_1020\").get_positions()[\"ch_pos\"]\n/tmp/tmp2qxfpo_1/solution.py:202: FutureWarning: Montage name 'standard_1020' is deprecated and will be removed in MNE 1.14. Use 'colin27_1020' instead.\n  pos = mne.channels.make_standard_montage(\"standard_1020\").get_positions()[\"ch_pos\"]\n"
+},
+"sz_aseeg|1|champion|eval_anono": {
+"score": 0.74359,
+"external": {
+"msu": 0.6797720797720799,
+"repod": 0.5306122448979592
+},
+"log": "E 1.14. Use 'colin27_1020' instead.\n  pos = mne.channels.make_standard_montage(\"standard_1020\").get_positions()[\"ch_pos\"]\n/tmp/tmp3hgqlcax/solution.py:202: FutureWarning: Montage name 'standard_1020' is deprecated and will be removed in MNE 1.14. Use 'colin27_1020' instead.\n  pos = mne.channels.make_standard_montage(\"standard_1020\").get_positions()[\"ch_pos\"]\n/tmp/tmp3hgqlcax/solution.py:202: FutureWarning: Montage name 'standard_1020' is deprecated and will be removed in MNE 1.14. Use 'colin27_1020' instead.\n  pos = mne.channels.make_standard_montage(\"standard_1020\").get_positions()[\"ch_pos\"]\n"
+},
+"sz_aseeg|1|seed|eval": {
+"score": 0.698718,
+"external": {
+"msu": 0.6957264957264958,
+"repod": 0.4897959183673469
+},
+"log": "[harness] eeg_psych/sz_aseeg seed=1 mode=eval items=101 dev_pool=76 eval=25 load=0s\n[harness] external msu: SCORE 0.695726\n[harness] external repod: SCORE 0.489796\n[harness] done in 17s\nSCORE: 0.698718\n"
+},
+"sz_aseeg|1|seed|eval_anono": {
+"score": 0.698718,
+"external": {
+"msu": 0.6957264957264958,
+"repod": 0.4897959183673469
+},
+"log": "[harness] eeg_psych/sz_aseeg seed=1 mode=eval items=101 dev_pool=76 eval=25 load=0s\n[harness] external msu: SCORE 0.695726\n[harness] external repod: SCORE 0.489796\n[harness] done in 18s\nSCORE: 0.698718\n"
+},
+"sz_aseeg|2|champion|eval": {
+"score": 0.794872,
+"external": {
+"msu": 0.5196581196581196,
+"repod": 0.4285714285714285
+},
+"log": "[harness] eeg_psych/sz_aseeg seed=2 mode=eval items=101 dev_pool=76 eval=25 load=0s\n[harness] external msu: SCORE 0.519658\n[harness] external repod: SCORE 0.428571\n[harness] done in 55s\nSCORE: 0.794872\n"
+},
+"sz_aseeg|2|champion|eval_anono": {
+"score": 0.794872,
+"external": {
+"msu": 0.5196581196581196,
+"repod": 0.4285714285714285
+},
+"log": "[harness] eeg_psych/sz_aseeg seed=2 mode=eval items=101 dev_pool=76 eval=25 load=0s\n[harness] external msu: SCORE 0.519658\n[harness] external repod: SCORE 0.428571\n[harness] done in 59s\nSCORE: 0.794872\n"
+},
+"sz_aseeg|2|seed|eval": {
+"score": 0.583333,
+"external": {
+"msu": 0.6814814814814815,
+"repod": 0.5
+},
+"log": "[harness] eeg_psych/sz_aseeg seed=2 mode=eval items=101 dev_pool=76 eval=25 load=0s\n[harness] external msu: SCORE 0.681481\n[harness] external repod: SCORE 0.500000\n[harness] done in 15s\nSCORE: 0.583333\n"
+},
+"sz_aseeg|2|seed|eval_anono": {
+"score": 0.583333,
+"external": {
+"msu": 0.6814814814814815,
+"repod": 0.5
+},
+"log": "[harness] eeg_psych/sz_aseeg seed=2 mode=eval items=101 dev_pool=76 eval=25 load=0s\n[harness] external msu: SCORE 0.681481\n[harness] external repod: SCORE 0.500000\n[harness] done in 15s\nSCORE: 0.583333\n"
+},
+"sz_aseeg|3|champion|eval": {
+"score": 0.858974,
+"external": {
+"msu": 0.41367521367521365,
+"repod": 0.6989795918367346
+},
+"log": "E 1.14. Use 'colin27_1020' instead.\n  pos = mne.channels.make_standard_montage(\"standard_1020\").get_positions()[\"ch_pos\"]\n/tmp/tmpv8qii307/solution.py:236: FutureWarning: Montage name 'standard_1020' is deprecated and will be removed in MNE 1.14. Use 'colin27_1020' instead.\n  pos = mne.channels.make_standard_montage(\"standard_1020\").get_positions()[\"ch_pos\"]\n/tmp/tmpv8qii307/solution.py:236: FutureWarning: Montage name 'standard_1020' is deprecated and will be removed in MNE 1.14. Use 'colin27_1020' instead.\n  pos = mne.channels.make_standard_montage(\"standard_1020\").get_positions()[\"ch_pos\"]\n"
+},
+"sz_aseeg|3|champion|eval_anono": {
+"score": 0.858974,
+"external": {
+"msu": 0.41367521367521365,
+"repod": 0.6989795918367346
+},
+"log": "E 1.14. Use 'colin27_1020' instead.\n  pos = mne.channels.make_standard_montage(\"standard_1020\").get_positions()[\"ch_pos\"]\n/tmp/tmprzdrff9o/solution.py:236: FutureWarning: Montage name 'standard_1020' is deprecated and will be removed in MNE 1.14. Use 'colin27_1020' instead.\n  pos = mne.channels.make_standard_montage(\"standard_1020\").get_positions()[\"ch_pos\"]\n/tmp/tmprzdrff9o/solution.py:236: FutureWarning: Montage name 'standard_1020' is deprecated and will be removed in MNE 1.14. Use 'colin27_1020' instead.\n  pos = mne.channels.make_standard_montage(\"standard_1020\").get_positions()[\"ch_pos\"]\n"
+},
+"sz_aseeg|3|seed|eval": {
+"score": 0.75,
+"external": {
+"msu": 0.7099715099715099,
+"repod": 0.5051020408163266
+},
+"log": "[harness] eeg_psych/sz_aseeg seed=3 mode=eval items=101 dev_pool=76 eval=25 load=0s\n[harness] external msu: SCORE 0.709972\n[harness] external repod: SCORE 0.505102\n[harness] done in 14s\nSCORE: 0.750000\n"
+},
+"sz_aseeg|3|seed|eval_anono": {
+"score": 0.75,
+"external": {
+"msu": 0.7099715099715099,
+"repod": 0.5051020408163266
+},
+"log": "[harness] eeg_psych/sz_aseeg seed=3 mode=eval items=101 dev_pool=76 eval=25 load=0s\n[harness] external msu: SCORE 0.709972\n[harness] external repod: SCORE 0.505102\n[harness] done in 15s\nSCORE: 0.750000\n"
+},
+"abnormal_tuab|1|champion|eval": {
+"score": 0.930661,
+"external": {
+"tuab_official_eval": 0.9303174603174603
+},
+"log": "tios=(0,).\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"abnormal_tuab|1|champion|eval_anono": {
+"score": 0.930644,
+"external": {
+"tuab_official_eval": 0.9303174603174603
+},
+"log": "tios=(0,).\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"abnormal_tuab|2|champion|eval": {
+"score": 0.898547,
+"external": {
+"tuab_official_eval": 0.9325925925925926
+},
+"log": "alty=None.\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"abnormal_tuab|2|champion|eval_anono": {
+"score": 0.898547,
+"external": {
+"tuab_official_eval": 0.9325925925925926
+},
+"log": "alty=None.\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"abnormal_tuab|3|champion|eval": {
+"score": 0.926046,
+"external": {
+"tuab_official_eval": 0.9206613756613756
+},
+"log": "alty=None.\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"abnormal_tuab|3|champion|eval_anono": {
+"score": 0.926046,
+"external": {
+"tuab_official_eval": 0.9206613756613756
+},
+"log": "alty=None.\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"helsinki|1|champion|eval": {
+"score": 0.934188,
+"external": {},
+"log": "[harness] neonatal_seizure/helsinki seed=1 mode=eval items=79 dev_pool=59 eval=20 load=0s\n[harness] done in 234s\nSCORE: 0.934188\n"
+},
+"helsinki|1|champion|eval_anono": {
+"score": 0.934188,
+"external": {},
+"log": "[harness] neonatal_seizure/helsinki seed=1 mode=eval items=79 dev_pool=59 eval=20 load=1s\n[harness] done in 221s\nSCORE: 0.934188\n"
+},
+"helsinki|2|champion|eval": {
+"score": 0.896044,
+"external": {},
+"log": "[harness] neonatal_seizure/helsinki seed=2 mode=eval items=79 dev_pool=59 eval=20 load=0s\n[harness] done in 263s\nSCORE: 0.896044\n"
+},
+"helsinki|2|champion|eval_anono": {
+"score": 0.896044,
+"external": {},
+"log": "[harness] neonatal_seizure/helsinki seed=2 mode=eval items=79 dev_pool=59 eval=20 load=0s\n[harness] done in 315s\nSCORE: 0.896044\n"
+},
+"helsinki|3|champion|eval": {
+"score": 0.866611,
+"external": {},
+"log": "[harness] neonatal_seizure/helsinki seed=3 mode=eval items=79 dev_pool=59 eval=20 load=1s\n[harness] done in 231s\nSCORE: 0.866611\n"
+},
+"helsinki|3|champion|eval_anono": {
+"score": 0.866611,
+"external": {},
+"log": "[harness] neonatal_seizure/helsinki seed=3 mode=eval items=79 dev_pool=59 eval=20 load=0s\n[harness] done in 193s\nSCORE: 0.866611\n"
+},
+"ibd_pooled|1|champion|eval": {
+"score": 0.661679,
+"external": {},
+"log": "alty=None.\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"ibd_pooled|1|champion|eval_anono": {
+"score": 0.661679,
+"external": {},
+"log": "alty=None.\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"ibd_pooled|1|champion|eval_anon": {
+"score": 0.674144,
+"external": {},
+"log": "alty=None.\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"ibd_pooled|2|champion|eval": {
+"score": 0.777583,
+"external": {},
+"log": "alty=None.\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"ibd_pooled|2|champion|eval_anono": {
+"score": 0.777583,
+"external": {},
+"log": "alty=None.\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"ibd_pooled|2|champion|eval_anon": {
+"score": 0.777583,
+"external": {},
+"log": "alty=None.\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"ibd_pooled|3|champion|eval": {
+"score": 0.765716,
+"external": {},
+"log": "alty=None.\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"ibd_pooled|3|champion|eval_anono": {
+"score": 0.765716,
+"external": {},
+"log": "alty=None.\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+},
+"ibd_pooled|3|champion|eval_anon": {
+"score": 0.765716,
+"external": {},
+"log": "alty=None.\n  warnings.warn(\n/usr/local/lib/python3.11/site-packages/sklearn/linear_model/_logistic.py:2129: FutureWarning: The fitted attributes of LogisticRegressionCV will be simplified in scikit-learn 1.10 to remove redundancy. Set`use_legacy_attributes=False` to enable the new behavior now, or set it to `True` to silence this warning during the transition period while keeping the deprecated behavior for the time being. The default value of use_legacy_attributes will change from True to False in scikit-learn 1.10. See the docstring of LogisticRegressionCV for more details.\n  warnings.warn(\n"
+}
+}

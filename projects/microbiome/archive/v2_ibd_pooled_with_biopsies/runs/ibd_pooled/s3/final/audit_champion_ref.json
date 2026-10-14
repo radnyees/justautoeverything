@@ -1,0 +1,1 @@
+{"static": {"has_featurize": true, "functions": ["_alpha", "_level", "_lineage", "_md_index", "_shannon", "featurize"], "hits": []}, "score": 0.7544788748832867, "score_joint": 0.7249787757568782, "feat_max_rel_diff": 0.0, "n_chunks": 20}

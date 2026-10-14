@@ -1,38 +1,40 @@
-"""Genus-level relative abundance, per-study percentile-rank harmonization, random forest."""
+"""Genus-level log relative abundance, robustly standardized within study (label-free harmonization) + RF."""
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
 
 def _study_labels(items, ctx):
-    meta = ctx.get("meta") if isinstance(ctx, dict) else None
+    meta = ctx.get("meta")
     if meta is None or "study" not in getattr(meta, "columns", []):
         return np.zeros(len(items), dtype=object)
-    s = meta["study"]
-    if s.index.equals(items.index):
-        return s.values
     try:
-        aligned = s.reindex(items.index)
-        if not aligned.isna().any():
-            return aligned.values
+        s = meta.loc[items.index, "study"]
+        return s.astype(str).values
     except Exception:
-        pass
-    if len(s) == len(items):
-        return s.values
-    return np.zeros(len(items), dtype=object)
+        if len(meta) == len(items):
+            return meta["study"].astype(str).values
+        return np.zeros(len(items), dtype=object)
 
 
 def featurize(items, ctx):
     rel = items.div(items.sum(axis=1).clip(lower=1), axis=0)
     genus = [c.split(";")[5] if len(c.split(";")) > 5 else "g__" for c in rel.columns]
     G = rel.T.groupby(np.array(genus)).sum().T              # samples x genera
-    study = _study_labels(G, ctx)
-    out = pd.DataFrame(0.0, index=G.index, columns=G.columns)
-    for st in pd.unique(study):
-        m = study == st
-        # within-study percentile rank (ties averaged) -> removes per-study shift/scale
-        out.loc[m] = G.loc[m].rank(axis=0, method="average", pct=True).values
-    return out
+    L = np.log10(G.values + 1e-5)
+
+    # per-study robust standardization (no labels used): removes depth/region/protocol offsets
+    studies = _study_labels(items, ctx)
+    Z = np.zeros_like(L)
+    for s in pd.unique(studies):
+        m = studies == s
+        block = L[m]
+        med = np.median(block, axis=0)
+        iqr = np.subtract(*np.percentile(block, [75, 25], axis=0))
+        sd = block.std(axis=0)
+        scale = np.where(iqr > 1e-8, iqr / 1.349, np.where(sd > 1e-8, sd, 1.0))
+        Z[m] = (block - med) / scale
+    return pd.DataFrame(Z, index=G.index, columns=G.columns)
 
 
 def fit_predict(F_train, y_train, F_test, ctx):
