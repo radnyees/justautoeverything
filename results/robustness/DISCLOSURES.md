@@ -13,6 +13,8 @@ history of this repository.
 | Optuna search spaces written | 10-13, after all loop results incl. Eval | loop champions' feature families | baseline is "loop-informed" (see BASELINES.md) |
 | Pooled estimator: DerSimonian-Laird first, then equal-weight mean as primary | 10-13 | DL gave infinite weight to arms identical to the seed (SE = 0) | both are reported in `results/STATS.md` |
 | Hierarchical bootstrap, sensitivity analyses, demographic and leakage checks | 10-13, revision 2 | all results | added as checks; per-task claims now use the hierarchical p |
+| Independent (seed-derived) Optuna baseline and TDBRAIN protocol probe | `eaf43a4`, 10-16 13:00 (pre-registration committed before any run) | all earlier results | `docs/preregistration_phase3.md`; registered analyses followed as written |
+| Harmonized re-scoring of TDBRAIN models; per-feature probe breakdown | 10-16, after the registered probe was positive | probe result | exploratory, labelled as such in PROBE.md |
 | Pooled IBD v3 (stool only; grouped by person / twin pair) | 10-13, revision 2 | all v2 results (leak found by audit) | v2 archived in `projects/microbiome/archive/v2_ibd_pooled_with_biopsies/`; all IBD runs redone from scratch |
 
 Every change listed above that altered a task re-ran that task's loops from scratch. A fully
@@ -54,5 +56,10 @@ pre-registered confirmation (new split seeds, analysis plan fixed in advance) wa
   read them (LEAKAGE.md: static scan and anonymized re-scoring, with a positive control).
 * **Demographics:** ASEEG and our TUAB build carry no age/sex, so their demographic confounding
   could not be checked.
+* **TDBRAIN recording protocol:** technical recording properties alone (P1: length, mains noise
+  relative to EEG power, DC offset, flat/clipped channels) predict the TDBRAIN case/control labels
+  (Eval AUROC 0.81 for both tasks; pre-registered rule triggered). Caveat on the registered P1 definition:
+  its mains-noise features are relative to 1-45 Hz EEG power and so partly reflect overall EEG power.
+  On harmonized recordings most of the loop's TDBRAIN gain disappears (PROBE.md, exploratory).
 * **Seeds** (the starting solutions) were written by the authors' coding assistant (Claude) before
   any loop ran; their strength is a design choice, which the same-budget baselines address.

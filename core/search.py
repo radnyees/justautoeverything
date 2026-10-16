@@ -28,6 +28,7 @@ import optuna
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "core"))
+sys.path.insert(0, str(ROOT))                     # so space.py can import core.generic_models
 from loop import EPS, NEG_INF, evaluate, project_cfg  # noqa: E402
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -44,12 +45,12 @@ def code_for(params, template):
     return f"PARAMS = {params!r}\n" + template
 
 
-def run_one(project, task, seed, trials, time_limit, n_startup):
+def run_one(project, task, seed, trials, time_limit, n_startup, space_dir="baselines", subdir="runs_optuna"):
     pdir = ROOT / "projects" / project
     size = project_cfg(project)["tasks"][task].get("size", "m")
-    template = (pdir / "baselines" / "template.py").read_text()
-    space = _module(pdir / "baselines" / "space.py")
-    run = pdir / "runs_optuna" / task / f"s{seed}"
+    template = (pdir / space_dir / "template.py").read_text()
+    space = _module(pdir / space_dir / "space.py")
+    run = pdir / subdir / task / f"s{seed}"
     (run / "candidates").mkdir(parents=True, exist_ok=True)
     tag = f"{project}/{task} s{seed}"
 
@@ -118,10 +119,14 @@ def main():
     ap.add_argument("--trials", type=int, default=20)
     ap.add_argument("--n-startup", type=int, default=8)
     ap.add_argument("--time-limit", type=int, default=1500)
+    ap.add_argument("--space-dir", default="baselines",
+                    help="baselines (loop-informed space) | baselines_indep (seed-derived space)")
+    ap.add_argument("--subdir", default="runs_optuna", help="runs_optuna | runs_optuna_indep")
     a = ap.parse_args()
     jobs = [(t, int(s)) for t in a.tasks.split() for s in a.seeds.split()]
     with ThreadPoolExecutor(len(jobs)) as ex:
-        futs = {j: ex.submit(run_one, a.project, j[0], j[1], a.trials, a.time_limit, a.n_startup) for j in jobs}
+        futs = {j: ex.submit(run_one, a.project, j[0], j[1], a.trials, a.time_limit, a.n_startup,
+                          a.space_dir, a.subdir) for j in jobs}
         for j, f in futs.items():
             try:
                 f.result()

@@ -66,3 +66,21 @@ scored once on that split's Eval set (splits 1-3), with a subject bootstrap CI.
 
 ## Not in this phase
 ASZED and other external cohorts, stronger-loop variants, basin hopping, ABIDE II, new splits.
+
+## Notes added after running (2026-10-16; nothing above was changed)
+* Protocol and decision rule were followed as registered. Result: P1 POSITIVE for both TDBRAIN tasks
+  (mean Eval AUROC 0.805 and 0.813, CIs excluding 0.5); adjusted analyses reported in
+  results/robustness/PROBE.md as registered.
+* Measurement caveat found when interpreting P1: its line-noise features are power at 49-51 / 59-61 Hz
+  RELATIVE to 1-45 Hz power, so they also reflect overall EEG power (higher in the MDD group). An
+  exploratory per-feature check (core/probe_features.py) shows that ABSOLUTE mains power is not lower in
+  patients (MDD: AUROC 0.60, higher in patients); the strongest MDD differences are relative mains power
+  and total 1-45 Hz power; for ADHD, recording length (median 120 vs 121 s) and DC offset.
+* Exploratory, not registered: frozen seeds and champions re-scored on harmonized recordings (same
+  length, mains notched, DC removed; and additionally amplitude-normalized). Results and caveats in
+  results/robustness/PROBE.md.
+* Independent (seed-derived) Optuna, analysed as registered: all 36 runs x 20 trials completed, 0 failed
+  trials; with the seed's own settings each template reproduces the seed's Dev score exactly (checked on
+  one task per project before launch). Pooled Eval gain over the seed +0.017 (p = 0.29); loop minus this
+  arm +0.033 (p = 0.095); per task (hierarchical bootstrap, Holm across 12): loop better on abnormal_tuab
+  (+0.072) and helsinki (+0.067), no task significantly worse. Numbers in results/STATS.md.

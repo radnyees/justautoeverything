@@ -82,6 +82,12 @@ dataset and literature references: [`docs/references.md`](docs/references.md).
    * **Leakage** (`core/leakage_check.py`, app `jae-sealed` without network, harness modes
      `eval_anon` / `eval_anono`): every champion re-scored with item ids replaced by tokens, with
      positive controls; static scan of all saved solution code.
+   * **Independent search baseline** (pre-registered, `docs/preregistration_phase3.md`): Optuna over a
+     space built mechanically from each seed plus one generic model list (`projects/*/baselines_indep/`,
+     `runs_optuna_indep/`); with the seed's settings it reproduces each seed's Dev score exactly.
+   * **TDBRAIN protocol probe** (pre-registered; `core/probe.py`): can technical recording properties
+     alone predict the labels? Plus an exploratory re-scoring on harmonized recordings
+     (`core/probe_harmonized.py`). Results in `results/robustness/PROBE.md`.
    * **Statistics** report, per task, a subject-level bootstrap (conditional on the fitted models), a
      hierarchical bootstrap over splits, loop runs and subjects (used for per-task claims) and a
      split-level t-test, plus pooled-gain sensitivity analyses. Decisions taken after results were

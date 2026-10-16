@@ -1,0 +1,24 @@
+{
+  "project": "proteomics_ad",
+  "task": "csf_ad",
+  "seed": 2,
+  "run": "s2",
+  "subdir": "runs_optuna_indep",
+  "solution": "solution.py",
+  "dev_seed": 0.854838,
+  "dev_champion": 0.885418,
+  "eval_seed": 0.9133333333333334,
+  "eval_champion": 0.9144444444444446,
+  "dev_gain": 0.03058000000000005,
+  "eval_gain": 0.0011111111111111738,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.05445506431921577,
+    "ci95": [
+      -0.09962998102466802,
+      0.11417197158298363
+    ],
+    "p_one_sided": 0.561
+  },
+  "external": {}
+}

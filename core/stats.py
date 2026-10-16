@@ -39,9 +39,11 @@ SE_FLOOR = 0.005          # DL only: an arm identical to the seed has bootstrap 
 FLAT_AUROC = {t for _, t in TASKS} - {"prism_auc", "helsinki"}   # one scalar prediction per item
 ARMS = {"seed": None, "loop": ("runs", "", "solution.py"), "bestof20": ("runs_bestof20", "", "solution.py"),
         "oneshot": ("runs_bestof20", "_oneshot", "candidates/round_01.py"),
-        "optuna": ("runs_optuna", "", "solution.py")}
+        "optuna": ("runs_optuna", "", "solution.py"),
+        "optuna_indep": ("runs_optuna_indep", "", "solution.py")}
 COMPARISONS = [("seed", "loop"), ("seed", "bestof20"), ("seed", "oneshot"), ("seed", "optuna"),
-               ("bestof20", "loop"), ("optuna", "loop"), ("oneshot", "loop")]
+               ("seed", "optuna_indep"), ("bestof20", "loop"), ("optuna", "loop"), ("optuna_indep", "loop"),
+               ("oneshot", "loop")]
 
 
 def arm_report(project, task, s, arm):

@@ -26,6 +26,7 @@ from stats import TASKS, arm_report  # noqa: E402
 
 RB = ROOT / "results" / "robustness"
 ARM_STYLE = {"oneshot": ("One-shot LLM", "#9AA5B4", "v"), "bestof20": ("Best-of-20 LLM (no feedback)", "#D9860F", "s"),
+             "optuna_indep": ("Optuna, seed-derived space", "#7A5AF8", "P"),
              "optuna": ("Optuna, loop-informed space", "#1F9D55", "D"), "loop": ("Autoresearch loop", "#2563C9", "o")}
 TASK_ORDER = [t for _, t in sorted(TASKS, key=lambda pt: (PROJECT_ORDER.index(pt[0]), TASKS.index(pt)))]
 PROJ = dict((t, p) for p, t in TASKS)
@@ -57,7 +58,8 @@ def arm_scores():
             rows.append({"project": project, "task": task, "split": s, "arm": "seed",
                          "eval": seed["eval_seed"], "dev": seed["dev_seed"], "adopted": None})
             for arm, (sub, tag) in {"loop": ("runs", ""), "bestof20": ("runs_bestof20", ""),
-                                    "oneshot": ("runs_bestof20", "oneshot"), "optuna": ("runs_optuna", "")}.items():
+                                    "oneshot": ("runs_bestof20", "oneshot"), "optuna": ("runs_optuna", ""),
+                                    "optuna_indep": ("runs_optuna_indep", "")}.items():
                 fs = _fs(project, sub, task, f"s{s}", tag)
                 if fs is None:
                     continue
@@ -78,7 +80,7 @@ def baselines(df, stats_df):
     seed = d[d["arm"] == "seed"].set_index(["task", "split"])["eval"]
     d["gain"] = d.apply(lambda r: r["eval"] - seed.get((r["task"], r["split"]), np.nan), axis=1)
     d.drop(columns=["external"], errors="ignore").to_csv(RB / "baselines.csv", index=False, float_format="%.5f")
-    arms = [a for a in ("oneshot", "bestof20", "optuna", "loop") if a in set(d["arm"])]
+    arms = [a for a in ("oneshot", "bestof20", "optuna_indep", "optuna", "loop") if a in set(d["arm"])]
     piv = d.groupby(["task", "arm"])["eval"].mean().unstack()
     L = ["# Baselines with the same budget (Eval, mean over 3 splits)", "",
          "All arms start from the same seed solution, use the same harness, Dev CV, per-candidate time",
@@ -93,6 +95,11 @@ def baselines(df, stats_df):
          "  feature families the loop's champions found (aperiodic slope, coherence, Hjorth parameters,",
          "  per-neonate normalization, ...). It is therefore informed by the loop's findings: a stronger",
          "  baseline than an independent search (conservative for the loop), not an LLM-free one.",
+         "* **Optuna, seed-derived space** (independent; pre-registered in docs/preregistration_phase3.md) = 20",
+         "  Optuna TPE trials over a space built mechanically from each task's seed solution (its constants and",
+         "  choices made tunable) plus one generic model list (logistic regression, random forest, gradient",
+         "  boosting); nothing from the loop's results. With the seed's settings it reproduces the seed's Dev",
+         "  score exactly on every project.",
          "* **Loop** = the autoresearch loop (history + scores fed back each round).", "",
          "| task | seed | " + " | ".join(ARM_STYLE[a][0] for a in arms) + " |",
          "|---|---|" + "---|" * len(arms)]
@@ -150,10 +157,12 @@ def baselines(df, stats_df):
 
 def fig_meta(stats_df):
     pooled = json.loads((ROOT / "results" / "stats_pooled.json").read_text())
-    comps = [c for c in ["seed->loop", "seed->bestof20", "seed->optuna", "bestof20->loop", "optuna->loop"]
+    comps = [c for c in ["seed->loop", "seed->optuna_indep", "seed->optuna", "optuna_indep->loop", "optuna->loop",
+                         "bestof20->loop"]
              if c in set(stats_df["comparison"])]
     titles = {"seed->loop": "Loop vs seed", "seed->bestof20": "Best-of-20 vs seed", "seed->optuna": "Optuna (loop-informed) vs seed",
-              "bestof20->loop": "Loop vs best-of-20", "optuna->loop": "Loop vs Optuna (loop-informed)"}
+              "bestof20->loop": "Loop vs best-of-20", "optuna->loop": "Loop vs Optuna (loop-informed)",
+              "seed->optuna_indep": "Optuna (seed-derived) vs seed", "optuna_indep->loop": "Loop vs Optuna (seed-derived)"}
     fig, axes = plt.subplots(1, len(comps), figsize=(2.55 * len(comps) + 1.4, 0.36 * 13 + 1.6), sharey=True, sharex=True,
                              squeeze=False)
     order = TASK_ORDER[::-1]
@@ -426,7 +435,7 @@ def transfer(arms_df):
                     assert abs(auc - e["score"]) < 1e-9
                     row.update({f"ext_{key}": auc, f"ext_{key}_lo": lo, f"ext_{key}_hi": hi})
                 row["verdict_loop"] = _verdict(row["ext_loop_lo"], row["ext_loop_hi"])
-                for arm in ("bestof20", "optuna"):
+                for arm in ("bestof20", "optuna", "optuna_indep"):
                     r = arms_df[(arms_df["task"] == task) & (arms_df["split"] == s) & (arms_df["arm"] == arm)]
                     if len(r) and isinstance(r.iloc[0]["external"], dict):
                         row[f"ext_{arm}"] = r.iloc[0]["external"].get(name)
@@ -452,15 +461,17 @@ def transfer(arms_df):
                  f"-> loop {gg['ext_loop'].mean():.3f} (in-distribution Eval of the loop: {gg['internal_loop'].mean():.3f}).")
     L += ["",
          "| task -> external | what differs | split | in-distribution Eval: seed -> loop | external AUROC seed [95% CI] | "
-         "external AUROC loop [95% CI] | loop vs chance | best-of-20 | Optuna |",
-         "|---|---|---|---|---|---|---|---|---|"]
+         "external AUROC loop [95% CI] | loop vs chance | best-of-20 | Optuna (loop-informed) | Optuna (seed-derived) |",
+         "|---|---|---|---|---|---|---|---|---|---|"]
     for r in d.itertuples():
         b = getattr(r, "ext_bestof20", np.nan)
         o = getattr(r, "ext_optuna", np.nan)
+        oi = getattr(r, "ext_optuna_indep", np.nan)
         L.append(f"| {r.task} -> {r.external} | {EXT_KIND.get(r.external, '')} | {r.split} | "
                  f"{r.internal_seed:.3f} -> {r.internal_loop:.3f} | {r.ext_seed:.3f} [{r.ext_seed_lo:.2f}, {r.ext_seed_hi:.2f}] | "
                  f"{r.ext_loop:.3f} [{r.ext_loop_lo:.2f}, {r.ext_loop_hi:.2f}] | {r.verdict_loop} | "
-                 f"{'-' if pd.isna(b) else f'{b:.3f}'} | {'-' if pd.isna(o) else f'{o:.3f}'} |")
+                 f"{'-' if pd.isna(b) else f'{b:.3f}'} | {'-' if pd.isna(o) else f'{o:.3f}'} | "
+                 f"{'-' if pd.isna(oi) else f'{oi:.3f}'} |")
     g = d.groupby(["task", "external"], sort=False).agg(
         int_loop=("internal_loop", "mean"), ext_seed=("ext_seed", "mean"), ext_loop=("ext_loop", "mean"),
         above=("verdict_loop", lambda v: int((v == "above chance").sum())), n=("verdict_loop", "size"))
@@ -602,7 +613,8 @@ def overview():
     """results/robustness/README.md, generated: every number below is read from a result file."""
     st_ = pd.read_csv(ROOT / "results" / "stats_tasks.csv")
     pooled = json.loads((ROOT / "results" / "stats_pooled.json").read_text())
-    names = {"seed->loop": "Autoresearch loop", "seed->optuna": "Optuna, loop-informed space",
+    names = {"seed->loop": "Autoresearch loop", "seed->optuna_indep": "Optuna, seed-derived space (independent)",
+             "seed->optuna": "Optuna, loop-informed space",
              "seed->bestof20": "Best-of-20 LLM, no feedback", "seed->oneshot": "One-shot LLM"}
     L = ["# Robustness analyses -- overview (generated by core/report_robustness.py)", "",
          "Every number on this page is read from the result files listed in the table; Eval = held-out set,",
@@ -617,6 +629,7 @@ def overview():
          "| external transfer | [TRANSFER.md](TRANSFER.md), transfer.csv | fig11_transfer |",
          "| transduction audit | [AUDIT.md](AUDIT.md), audit.csv | fig12_audit |",
          "| leakage (ids, files, network) | [LEAKAGE.md](LEAKAGE.md), leakage_rescore.csv | - |",
+         "| TDBRAIN protocol probe (pre-registered) + harmonized re-scoring | [PROBE.md](PROBE.md), probe/ | - |",
          "| decisions, unequal conditions, data choices | [DISCLOSURES.md](DISCLOSURES.md) | - |", "",
          "## Pooled Eval gain over the seed (11 AUROC tasks; equal-weight mean, t-interval across tasks)", "",
          "| arm (20 Dev evaluations) | pooled gain | 95% CI | p |", "|---|---|---|---|"]
@@ -627,7 +640,7 @@ def overview():
                      f"{p['p_equal']:.3f} |")
     L += ["", "Head-to-head (B minus A): " + "; ".join(
         f"{c.replace('->', ' -> ')} {pooled[c]['mean_equal']:+.3f} (p = {pooled[c]['p_equal']:.3f})"
-        for c in ("oneshot->loop", "bestof20->loop", "optuna->loop") if c in pooled) + "."]
+        for c in ("oneshot->loop", "bestof20->loop", "optuna_indep->loop", "optuna->loop") if c in pooled) + "."]
     sens = pooled.get("seed->loop", {}).get("sensitivity", [])
     if sens:
         L += ["", "Sensitivity of the loop's pooled gain:", "", "| tasks included | k | gain | 95% CI | p |",
@@ -681,6 +694,25 @@ def overview():
               f"Champions: batch-dependent featurize {int(ch.featurize_batch_dependent.sum())}/{len(ch)}, batch-relative "
               f"(rank) outputs {int(ch.batch_relative_outputs.sum())}/{len(ch)}. Eval with a dev-pool reference batch minus "
               f"reported Eval: mean {dd.mean():+.4f}, worst {dd.min():+.4f} ({w.task} split {int(w.split)})."]
+    pr = RB / "probe"
+    if (pr / "mdd_tdbrain_P1_s1.json").exists():
+        from sklearn.metrics import roc_auc_score
+
+        def _auc(f):
+            r = json.loads(f.read_text())
+            return roc_auc_score(np.asarray(r["y"]).astype(int), np.asarray(r["predictions"], float))
+        L += ["", "## TDBRAIN protocol probe (pre-registered) and harmonized re-scoring (exploratory)", "",
+              "| task | P1 probe Eval AUROC (technical features only) | loop gain, raw recordings | "
+              "loop gain, harmonized recordings |", "|---|---|---|---|"]
+        for t in ("mdd_tdbrain", "adhd_tdbrain"):
+            p1 = np.mean([_auc(pr / f"{t}_P1_s{k}.json") for k in (1, 2, 3)])
+            proj = ROOT / "projects" / "eeg_psych" / "runs" / t
+            raw = np.mean([_auc(proj / f"s{k}" / "final" / "champion.json") - _auc(proj / f"s{k}" / "final" / "seed.json")
+                           for k in (1, 2, 3)])
+            har = np.mean([_auc(pr / f"harmonized_{t}_champion_s{k}.json") - _auc(pr / f"harmonized_{t}_seed_s{k}.json")
+                           for k in (1, 2, 3)]) if (pr / f"harmonized_{t}_champion_s1.json").exists() else float("nan")
+            L.append(f"| {t} | {p1:.3f} | {raw:+.3f} | {har:+.3f} |")
+        L += ["", "Harmonized = same length, mains noise notched, DC removed, before the frozen models see the data."]
     lk = RB / "leakage_rescore.csv"
     if lk.exists():
         d = pd.read_csv(lk)
