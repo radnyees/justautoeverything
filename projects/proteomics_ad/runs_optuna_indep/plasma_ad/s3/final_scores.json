@@ -1,0 +1,24 @@
+{
+  "project": "proteomics_ad",
+  "task": "plasma_ad",
+  "seed": 3,
+  "run": "s3",
+  "subdir": "runs_optuna_indep",
+  "solution": "solution.py",
+  "dev_seed": 0.869444,
+  "dev_champion": 0.934259,
+  "eval_seed": 0.9059829059829061,
+  "eval_champion": 0.8461538461538463,
+  "dev_gain": 0.06481499999999996,
+  "eval_gain": -0.05982905982905984,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.0928898966617155,
+    "ci95": [
+      -0.2479855371900826,
+      0.11463541666666642
+    ],
+    "p_one_sided": 0.755
+  },
+  "external": {}
+}

@@ -1,0 +1,24 @@
+{
+  "project": "microbiome",
+  "task": "ibd_pooled",
+  "seed": 2,
+  "run": "s2",
+  "subdir": "runs_optuna_indep",
+  "solution": "solution.py",
+  "dev_seed": 0.756199,
+  "dev_champion": 0.789489,
+  "eval_seed": 0.6842428711897738,
+  "eval_champion": 0.7971566699442805,
+  "dev_gain": 0.03329000000000004,
+  "eval_gain": 0.11291379875450669,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.06377049943552261,
+    "ci95": [
+      -0.019700492788757462,
+      0.23413249850480616
+    ],
+    "p_one_sided": 0.0435
+  },
+  "external": {}
+}

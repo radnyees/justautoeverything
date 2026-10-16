@@ -1,0 +1,278 @@
+{
+ "mdd_tdbrain": {
+  "n": 279,
+  "features": [
+   {
+    "feature": "EC:line60_rel",
+    "auroc": 0.22014693708609273,
+    "separation": 0.27985306291390727,
+    "median_patients": 0.0005069931878366116,
+    "median_controls": 0.0009286628276443
+   },
+   {
+    "feature": "EC:line50_rel",
+    "auroc": 0.23711713576158938,
+    "separation": 0.2628828642384106,
+    "median_patients": 0.0008161660590639575,
+    "median_controls": 0.0016182945468648218
+   },
+   {
+    "feature": "EO:line60_rel",
+    "auroc": 0.2515004139072848,
+    "separation": 0.24849958609271522,
+    "median_patients": 0.0005123383311957908,
+    "median_controls": 0.0009418075139660591
+   },
+   {
+    "feature": "EO:line50_rel",
+    "auroc": 0.2903042218543046,
+    "separation": 0.2096957781456954,
+    "median_patients": 0.0008498454695114462,
+    "median_controls": 0.0016149897812618279
+   },
+   {
+    "feature": "EC:log_power_1_45",
+    "auroc": 0.6689776490066226,
+    "separation": 0.1689776490066226,
+    "median_patients": 9.605112548581392,
+    "median_controls": 8.180735373785772
+   },
+   {
+    "feature": "EO:log_power_1_45",
+    "auroc": 0.6532491721854304,
+    "separation": 0.15324917218543044,
+    "median_patients": 9.477416701729126,
+    "median_controls": 8.175558648688984
+   },
+   {
+    "feature": "EC:dc_offset",
+    "auroc": 0.371067880794702,
+    "separation": 0.128932119205298,
+    "median_patients": 3497.2783682046565,
+    "median_controls": 4591.427047493856
+   },
+   {
+    "feature": "EO:dc_offset",
+    "auroc": 0.3894867549668874,
+    "separation": 0.1105132450331126,
+    "median_patients": 3380.541957288734,
+    "median_controls": 4497.328694697151
+   },
+   {
+    "feature": "EC:log_line50_abs",
+    "auroc": 0.6028559602649006,
+    "separation": 0.10285596026490063,
+    "median_patients": 2.6118413096580158,
+    "median_controls": 1.9768049187157892
+   },
+   {
+    "feature": "EC:log_emg_55_100",
+    "auroc": 0.599596440397351,
+    "separation": 0.09959644039735105,
+    "median_patients": 4.581288299366434,
+    "median_controls": 3.8755848542104885
+   },
+   {
+    "feature": "EO:clip_frac",
+    "auroc": 0.5987686258278146,
+    "separation": 0.09876862582781465,
+    "median_patients": 6.611570247933885e-05,
+    "median_controls": 6.611570247933885e-05
+   },
+   {
+    "feature": "EO:log_line50_abs",
+    "auroc": 0.5985099337748344,
+    "separation": 0.09850993377483441,
+    "median_patients": 2.4669528763109865,
+    "median_controls": 2.0581858317808575
+   },
+   {
+    "feature": "EO:log_emg_55_100",
+    "auroc": 0.5940604304635762,
+    "separation": 0.09406043046357615,
+    "median_patients": 4.413243574171464,
+    "median_controls": 3.9263184458838327
+   },
+   {
+    "feature": "EC:clip_frac",
+    "auroc": 0.5807377897350994,
+    "separation": 0.08073778973509937,
+    "median_patients": 6.611570247933885e-05,
+    "median_controls": 6.611570247933885e-05
+   },
+   {
+    "feature": "EC:length_s",
+    "auroc": 0.4192622102649007,
+    "separation": 0.08073778973509932,
+    "median_patients": 121.0,
+    "median_controls": 121.0
+   },
+   {
+    "feature": "EO:length_s",
+    "auroc": 0.42466887417218546,
+    "separation": 0.07533112582781454,
+    "median_patients": 121.0,
+    "median_controls": 121.0
+   },
+   {
+    "feature": "EC:log_sd",
+    "auroc": 0.4735616721854305,
+    "separation": 0.026438327814569507,
+    "median_patients": 5.648653491322127,
+    "median_controls": 5.671726149679845
+   },
+   {
+    "feature": "EO:log_sd",
+    "auroc": 0.478425082781457,
+    "separation": 0.02157491721854299,
+    "median_patients": 5.618095683463698,
+    "median_controls": 5.614155490795309
+   },
+   {
+    "feature": "EO:present",
+    "auroc": 0.51171875,
+    "separation": 0.01171875,
+    "median_patients": 1.0,
+    "median_controls": 1.0
+   }
+  ]
+ },
+ "adhd_tdbrain": {
+  "n": 170,
+  "features": [
+   {
+    "feature": "EO:clip_frac",
+    "auroc": 0.7347998022738508,
+    "separation": 0.23479980227385078,
+    "median_patients": 6.666666666666667e-05,
+    "median_controls": 6.611570247933885e-05
+   },
+   {
+    "feature": "EC:length_s",
+    "auroc": 0.2689075630252101,
+    "separation": 0.23109243697478993,
+    "median_patients": 120.0,
+    "median_controls": 121.0
+   },
+   {
+    "feature": "EC:clip_frac",
+    "auroc": 0.7310924369747899,
+    "separation": 0.23109243697478987,
+    "median_patients": 6.666666666666667e-05,
+    "median_controls": 6.611570247933885e-05
+   },
+   {
+    "feature": "EO:length_s",
+    "auroc": 0.29881364310430053,
+    "separation": 0.20118635689569947,
+    "median_patients": 120.0,
+    "median_controls": 121.0
+   },
+   {
+    "feature": "EC:dc_offset",
+    "auroc": 0.3392651178118306,
+    "separation": 0.1607348821881694,
+    "median_patients": 2645.8338471498173,
+    "median_controls": 4774.877461539252
+   },
+   {
+    "feature": "EO:dc_offset",
+    "auroc": 0.3674410940846927,
+    "separation": 0.13255890591530728,
+    "median_patients": 2710.4178260748545,
+    "median_controls": 4407.479986483574
+   },
+   {
+    "feature": "EC:line60_rel",
+    "auroc": 0.37370242214532867,
+    "separation": 0.12629757785467133,
+    "median_patients": 0.0007517524130285665,
+    "median_controls": 0.0008431281597340651
+   },
+   {
+    "feature": "EC:log_sd",
+    "auroc": 0.37946943483275664,
+    "separation": 0.12053056516724336,
+    "median_patients": 5.279311341605479,
+    "median_controls": 5.669502755957925
+   },
+   {
+    "feature": "EC:line50_rel",
+    "auroc": 0.38853188334157196,
+    "separation": 0.11146811665842804,
+    "median_patients": 0.001110785073864376,
+    "median_controls": 0.0014959797394610375
+   },
+   {
+    "feature": "EO:log_sd",
+    "auroc": 0.39446366782006914,
+    "separation": 0.10553633217993086,
+    "median_patients": 5.195203230315591,
+    "median_controls": 5.544935049258573
+   },
+   {
+    "feature": "EC:log_line50_abs",
+    "auroc": 0.42906574394463665,
+    "separation": 0.07093425605536335,
+    "median_patients": 1.6923034922845817,
+    "median_controls": 1.9850122822973957
+   },
+   {
+    "feature": "EO:line60_rel",
+    "auroc": 0.434997528423134,
+    "separation": 0.065002471576866,
+    "median_patients": 0.0009753019664300693,
+    "median_controls": 0.0008518297330611375
+   },
+   {
+    "feature": "EO:line50_rel",
+    "auroc": 0.4363157027516889,
+    "separation": 0.0636842972483111,
+    "median_patients": 0.0014687578529932236,
+    "median_controls": 0.0014954526132256254
+   },
+   {
+    "feature": "EC:log_emg_55_100",
+    "auroc": 0.43779864887131326,
+    "separation": 0.062201351128686744,
+    "median_patients": 3.6171662353888463,
+    "median_controls": 3.7976535757999805
+   },
+   {
+    "feature": "EO:log_line50_abs",
+    "auroc": 0.45196902290327895,
+    "separation": 0.04803097709672105,
+    "median_patients": 1.6928840146401782,
+    "median_controls": 1.783390313776622
+   },
+   {
+    "feature": "EO:log_emg_55_100",
+    "auroc": 0.4529576536496952,
+    "separation": 0.0470423463503048,
+    "median_patients": 3.3465325393380576,
+    "median_controls": 3.630532153592071
+   },
+   {
+    "feature": "EC:log_power_1_45",
+    "auroc": 0.45411105618718073,
+    "separation": 0.04588894381281927,
+    "median_patients": 7.441058527858045,
+    "median_controls": 8.13797374943394
+   },
+   {
+    "feature": "EO:log_power_1_45",
+    "auroc": 0.46745757126379966,
+    "separation": 0.032542428736200335,
+    "median_patients": 7.2437588358897065,
+    "median_controls": 7.957023048477401
+   },
+   {
+    "feature": "EO:present",
+    "auroc": 0.5168067226890756,
+    "separation": 0.01680672268907557,
+    "median_patients": 1.0,
+    "median_controls": 1.0
+   }
+  ]
+ }
+}

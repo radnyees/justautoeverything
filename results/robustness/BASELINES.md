@@ -12,22 +12,27 @@ limit and the same 20 Dev evaluations, and are scored once on the same Eval sets
   feature families the loop's champions found (aperiodic slope, coherence, Hjorth parameters,
   per-neonate normalization, ...). It is therefore informed by the loop's findings: a stronger
   baseline than an independent search (conservative for the loop), not an LLM-free one.
+* **Optuna, seed-derived space** (independent; pre-registered in docs/preregistration_phase3.md) = 20
+  Optuna TPE trials over a space built mechanically from each task's seed solution (its constants and
+  choices made tunable) plus one generic model list (logistic regression, random forest, gradient
+  boosting); nothing from the loop's results. With the seed's settings it reproduces the seed's Dev
+  score exactly on every project.
 * **Loop** = the autoresearch loop (history + scores fed back each round).
 
-| task | seed | One-shot LLM | Best-of-20 LLM (no feedback) | Optuna, loop-informed space | Autoresearch loop |
-|---|---|---|---|---|---|
-| mdd_tdbrain | 0.850 | 0.864 | 0.884 | 0.946 | **0.954** |
-| adhd_tdbrain | 0.785 | 0.785 | 0.785 | 0.918 | **0.922** |
-| sz_aseeg | 0.677 | 0.677 | 0.705 | 0.678 | **0.799** |
-| abnormal_tuab | 0.847 | 0.866 | 0.888 | 0.889 | **0.918** |
-| autism_abide | 0.781 | 0.783 | **0.790** | 0.781 | 0.778 |
-| adhd_adhd200 | 0.572 | 0.570 | 0.627 | 0.650 | **0.665** |
-| helsinki | 0.827 | 0.827 | 0.827 | 0.824 | **0.899** |
-| crc_baxter | 0.795 | **0.789** | 0.787 | 0.759 | 0.740 |
-| ibd_pooled | 0.721 | **0.755** | 0.750 | 0.688 | 0.735 |
-| plasma_ad | 0.912 | 0.895 | 0.897 | **0.934** | 0.866 |
-| csf_ad | 0.913 | 0.913 | 0.891 | **0.971** | 0.954 |
-| prism_auc | 0.149 | 0.149 | 0.149 | 0.148 | **0.160** |
+| task | seed | One-shot LLM | Best-of-20 LLM (no feedback) | Optuna, seed-derived space | Optuna, loop-informed space | Autoresearch loop |
+|---|---|---|---|---|---|---|
+| mdd_tdbrain | 0.850 | 0.864 | 0.884 | 0.911 | 0.946 | **0.954** |
+| adhd_tdbrain | 0.785 | 0.785 | 0.785 | 0.921 | 0.918 | **0.922** |
+| sz_aseeg | 0.677 | 0.677 | 0.705 | 0.647 | 0.678 | **0.799** |
+| abnormal_tuab | 0.847 | 0.866 | 0.888 | 0.846 | 0.889 | **0.918** |
+| autism_abide | 0.781 | 0.783 | **0.790** | 0.780 | 0.781 | 0.778 |
+| adhd_adhd200 | 0.572 | 0.570 | 0.627 | 0.568 | 0.650 | **0.665** |
+| helsinki | 0.827 | 0.827 | 0.827 | 0.832 | 0.824 | **0.899** |
+| crc_baxter | 0.795 | 0.789 | 0.787 | **0.795** | 0.759 | 0.740 |
+| ibd_pooled | 0.721 | 0.755 | 0.750 | **0.766** | 0.688 | 0.735 |
+| plasma_ad | 0.912 | 0.895 | 0.897 | 0.863 | **0.934** | 0.866 |
+| csf_ad | 0.913 | 0.913 | 0.891 | 0.934 | **0.971** | 0.954 |
+| prism_auc | 0.149 | 0.149 | 0.149 | 0.148 | 0.148 | **0.160** |
 
 One-shot proposals adopted on Dev: 17/36; failed to run: 0/36.
 
@@ -39,6 +44,8 @@ One-shot proposals adopted on Dev: 17/36; failed to run: 0/36.
 | seed->bestof20 | 6/12 | +0.014 | -0.003 .. +0.031 | 0.095 | abnormal_tuab (+0.041) |
 | seed->oneshot | 4/12 | +0.004 | -0.005 .. +0.013 | 0.350 | none |
 | seed->optuna | 8/12 | +0.033 | -0.004 .. +0.069 | 0.073 | mdd_tdbrain (+0.096), abnormal_tuab (+0.042) |
+| seed->optuna_indep | 5/12 | +0.017 | -0.017 .. +0.050 | 0.291 | none |
 | bestof20->loop | 8/12 | +0.036 | -0.002 .. +0.075 | 0.063 | adhd_tdbrain (+0.137), helsinki (+0.072) |
 | optuna->loop | 8/12 | +0.017 | -0.017 .. +0.051 | 0.281 | abnormal_tuab (+0.029), helsinki (+0.075) |
+| optuna_indep->loop | 9/12 | +0.033 | -0.007 .. +0.074 | 0.095 | abnormal_tuab (+0.072), helsinki (+0.067) |
 | oneshot->loop | 8/12 | +0.046 | +0.003 .. +0.089 | 0.037 | mdd_tdbrain (+0.090), adhd_tdbrain (+0.137), abnormal_tuab (+0.052), helsinki (+0.072) |

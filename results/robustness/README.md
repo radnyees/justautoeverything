@@ -14,6 +14,7 @@ across 12 tasks); see results/STATS.md for what each p-value is conditional on.
 | external transfer | [TRANSFER.md](TRANSFER.md), transfer.csv | fig11_transfer |
 | transduction audit | [AUDIT.md](AUDIT.md), audit.csv | fig12_audit |
 | leakage (ids, files, network) | [LEAKAGE.md](LEAKAGE.md), leakage_rescore.csv | - |
+| TDBRAIN protocol probe (pre-registered) + harmonized re-scoring | [PROBE.md](PROBE.md), probe/ | - |
 | decisions, unequal conditions, data choices | [DISCLOSURES.md](DISCLOSURES.md) | - |
 
 ## Pooled Eval gain over the seed (11 AUROC tasks; equal-weight mean, t-interval across tasks)
@@ -21,11 +22,12 @@ across 12 tasks); see results/STATS.md for what each p-value is conditional on.
 | arm (20 Dev evaluations) | pooled gain | 95% CI | p |
 |---|---|---|---|
 | Autoresearch loop | +0.050 | +0.006 .. +0.094 | 0.029 |
+| Optuna, seed-derived space (independent) | +0.017 | -0.017 .. +0.050 | 0.291 |
 | Optuna, loop-informed space | +0.033 | -0.004 .. +0.069 | 0.073 |
 | Best-of-20 LLM, no feedback | +0.014 | -0.003 .. +0.031 | 0.095 |
 | One-shot LLM | +0.004 | -0.005 .. +0.013 | 0.350 |
 
-Head-to-head (B minus A): oneshot -> loop +0.046 (p = 0.037); bestof20 -> loop +0.036 (p = 0.063); optuna -> loop +0.017 (p = 0.281).
+Head-to-head (B minus A): oneshot -> loop +0.046 (p = 0.037); bestof20 -> loop +0.036 (p = 0.063); optuna_indep -> loop +0.033 (p = 0.095); optuna -> loop +0.017 (p = 0.281).
 
 Sensitivity of the loop's pooled gain:
 
@@ -75,6 +77,15 @@ Significant only conditionally on the fitted models (subject bootstrap): crc_bax
 ## Transduction audit
 
 Champions: batch-dependent featurize 12/36, batch-relative (rank) outputs 11/36. Eval with a dev-pool reference batch minus reported Eval: mean -0.0006, worst -0.0244 (csf_ad split 1).
+
+## TDBRAIN protocol probe (pre-registered) and harmonized re-scoring (exploratory)
+
+| task | P1 probe Eval AUROC (technical features only) | loop gain, raw recordings | loop gain, harmonized recordings |
+|---|---|---|---|
+| mdd_tdbrain | 0.805 | +0.104 | +0.033 |
+| adhd_tdbrain | 0.813 | +0.137 | +0.002 |
+
+Harmonized = same length, mains noise notched, DC removed, before the frozen models see the data.
 
 ## Leakage
 

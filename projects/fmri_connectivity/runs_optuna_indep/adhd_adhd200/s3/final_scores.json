@@ -1,0 +1,24 @@
+{
+  "project": "fmri_connectivity",
+  "task": "adhd_adhd200",
+  "seed": 3,
+  "run": "s3",
+  "subdir": "runs_optuna_indep",
+  "solution": "solution.py",
+  "dev_seed": 0.613304,
+  "dev_champion": 0.635422,
+  "eval_seed": 0.6346811846689896,
+  "eval_champion": 0.6291322484808699,
+  "dev_gain": 0.022118000000000082,
+  "eval_gain": -0.005548936188119691,
+  "eval_bootstrap": {
+    "n_boot": 2000,
+    "boot_se": 0.022344652504842806,
+    "ci95": [
+      -0.0439642397101229,
+      0.04258689231389274
+    ],
+    "p_one_sided": 0.5165
+  },
+  "external": {}
+}

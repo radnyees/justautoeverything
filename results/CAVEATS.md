@@ -27,6 +27,10 @@
   ibd_pooled (113 stool samples from 103 people / twin pairs, v3), prism_auc (120 cell lines x 200 drugs).
 
 ## Task-specific
+- **TDBRAIN protocol confound (phase 3).** Technical recording properties alone separate patients
+  from controls (pre-registered probe, Eval AUROC ~0.81); on harmonized recordings (same length, mains
+  notched, DC removed) the loop's gains shrink from +0.104 to about +0.03 (MDD) and from +0.137 to about
+  0 (ADHD). See results/robustness/PROBE.md. Treat TDBRAIN results as protocol-confounded.
 - **TDBRAIN (mdd, adhd).** Healthy controls in TDBRAIN were all >= 18 y; tasks are age-matched to
   the overlapping age range (ADHD therefore = adults only) and age is never given to the model.
   Controls and patients were recruited/recorded separately, so state/vigilance or protocol
