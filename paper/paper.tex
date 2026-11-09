@@ -32,26 +32,51 @@
 \newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
 
 % ---- front matter -------------------------------------------------------------------------
-\title{When does an LLM autoresearch loop find real signal?\\
-\large A controlled study on twelve biomedical prediction tasks}
-\author{\todo{Author Name}\\ \todo{Affiliation}\\ \texttt{\todo{email}}}
+\title{Evaluating LLM autoresearch in biomedical prediction.}
+\author{}
 \date{}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-We applied LLM autoresearch loop \citep{karpathy_autoresearch} to 12 different biomedical prediction tasks from EEG, fMRI, microbiome, proteomic, and drug response data, and asked whether its improvements hold out 
+We applied LLM autoresearch loop inspired by \citet{karpathy_autoresearch} \citep{autoepi} to 12 different biomedical prediction tasks from EEG, fMRI, microbiome, proteomic, and drug response data, and asked whether its improvements hold out 
 on unseen data. Every final model was scored once on held-out subjects and, for three tasks, on external cohorts. We compared the loop with LLM proposals made without feedback with Optuna search \citep{akiba2019optuna}, each allowed the same 20 development evaluations. 
 Development scores improved in every run, but the held-out scores only improved in two thirds of them. On an average, the loop gain the AUROC of 0.05 over a standard baseline pipeline for each task more than the LLM without feedback, but this gain depended on 
 a very small number of tasks. The loop clearly outperformed the Optuna on two tasks, the abnormal EEG and neonatal seizure detection, where its gains also replicated across independent runs. On the other tasks, part of the gain could be attributed to shortcuts rather than biological signal. 
 When the site and demographic variables were provided, the loop built its models on them. In the TDBRAIN dataset, patients and controls could be separated using technical properties of the recording alone. Additionally, the loop's gain on psychiatric EEG did not transfer to external cohorts. These findings suggest that feedback is essential for an LLM to improve biomedical prediction pipelines, but the development scores alone overstate the loop can achieve. Gains from such loops should be confirmed on held-out, shortcut free and external data 
 before they are interpreted as biological findings.
 \end{abstract}
-
 % ===========================================================================================
 \section{Introduction}\label{sec:intro}
+\paragraph{LLM driven autoresearch loops.}\label{sec:intro-loops} Agents built on LLMs are increasingly used to write, execute and iteratively refine machine learning code with limited human oversight \citep{huang2024mlagentbench,chan2024mlebench,jiang2025aide,lu2024aiscientist}. The autoresearch loop is the most minimal instance of this paradigm \citep{karpathy_autoresearch,autoepi}. 
+It compromises a single solution file, which the LLM may rewrite and a fixed evaluation harness, which it can neither inspect nor modify. At each round, the LLM proposes a revised solution, and the revision is only accepted only if it improves the development score. The simplicity of this design, with a complete record of every proposed change, makes the loop an attractive means of constructing prediction pipelines for new datasets. 
+The same acceptance criterion, however, renders the development score uninformative as a measure of the progress. Because revisions are retained only when they increase the score, the development score is non-decreasing by construction, and any loop will appear successful on the data against which 
+it was optimised. Whether the resulting improvements reflect geniune signal can be established only on the data withheld from the optimization.  
 
+
+\paragraph{Shortcuts and leakage in biomedical prediction.}\label{sec:intro-shortcuts} Biomedical prediction is particularly demanding setting for such a procedure. Datasets are typically small, and cases and control are often recruited at different sites or recorded under different protocols. Non-biological variables such as site, scanner, batch and demographics may therefore predict the label more accurately than the physiology of interest \citep{geirhos2020shortcut,varoquaux2022failures}. 
+For instance, \citet{zech2018confounding} found that a pneumonia classifier trained on cheat radiographs from several hospitals could also identify the hospital of origin, and that its performance generally decreases at hospitals not represented at training. In ADHD-200 competition, a model 
+using only personal characteristics such as age, sex and acquisition site outperformed models based on resting-state fMRI \citep{brown2012adhd200}. 
+Data leakage, in which information from the evaluation data enters the model fitting, presents a second risk. Leakage is a recurrent error in machine learning studies, \citet{kapoor2023leakage} documented it in nearly 294 papers across 17 different scientific fields. In EEG-based schizophrenia classification, approximately two thirds of the published studies were affected, and correcting for leakage reduced the accuracy on one public dataset from 86\% to 58\% \citep{racz2025szleakage}. Because the loop authors its own preprocessing and modelling code, 
+it may introduce comparable errors, and a leaking pipeline would be rewarded with a higher development score. A third source of optimism arises from model selection itself; choosing the best of many candidates on a single cross-validation estimate biases that estimate upwards \citep{cawley2010overfitting}. 
+An autoresearch loop is exposed to all three failure modes simultaneously. It analyses many candidate pipelines against a single score, and nothing in its objective distinguishes biological signal from a confound that raises the same score. An improvement in development score is therefore equally compatible with geniune signal, with shortcut learning and overfitting to development data.
+
+
+\paragraph{The present study.}\label{sec:intro-study} Here we ask under what conditions the improvements found by an autoresearch loop generalise beyond the data on which it has been trained. We applied a loop driven by Claude Opus 5.5 to 12 biomedical prediction tasks across six domains; scalp EEG, neonatal EEG, gut microbiome, resting-state fMRI, proteomics and drug response. All tasks were run under an identical protocol, for each task, the loop started from a standard baseline pipeline and ran for a fixed number of rounds on each of the data splits. The final model 
+of every run was evaluated once, after the loop had terminated on the held-out subjects and for three tasks, on external cohorts.
+To isolate the contribution of each component, we compared the loop with four baselines restricted to at most the same 20 development evaluations; a single LLM proposal, 20 different LLM proposals without feedback, and two Optuna searches \citep{akiba2019optuna}, one of them was pre-registered. The LLM baselines determine 
+whether the gains depend on feedback or on the prior knowledge of the LLM alone, and the Optuna search determines whether the LLM contributes beyond conventional configuration search. We further assessed 
+whether the loop exploited differences in site, demographics or recording protocol in place of biological signal. 
+
+Our contributions are as follows:
+\begin{itemize}
+      \item A controlled evaluation of 36 loop runs on 12 different tasks, each scored on held-out data, with independent repetitions on 9 tasks to quantify run-to-run variability.
+      \item Baselines matched in the number of development evaluations that separate the effect of feedback from that of the LLM itself and from a conventional search, including a pre-registered search space constructed without knowledge of the loop's results. 
+      \item Pre task inference that accounts for variability across splits, runs and corrects for multiple comparisons, together with pooled estimates and sensitivity analyses. 
+      \item Evidence that the loop exploits site, demographics and recording protocols shortcuts when they are available, including a pre-registered probe of the TDBRAIN recordings. 
+      \item An assessment of transfer to external cohorts, together with audits for transductive dependence and data leakage.
+\end{itemize}
 % ===========================================================================================
 
 % ===========================================================================================
